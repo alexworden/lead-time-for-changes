@@ -5,16 +5,18 @@ import org.kohsuke.github.*;
 import java.io.IOException;
 import java.time.*;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class LeadTimeCalculator {
     private final GitHub github;
     private final String repository;
-    private static final ZonedDateTime CURRENT_TIME = ZonedDateTime.parse("2025-01-14T18:01:27-08:00");
+    private final String startRelease;
+    private final String endRelease;
 
-    public LeadTimeCalculator(String token, String repository) throws IOException {
+    public LeadTimeCalculator(String token, String repository, String startRelease, String endRelease) throws IOException {
         this.github = new GitHubBuilder().withOAuthToken(token).build();
         this.repository = repository;
+        this.startRelease = startRelease;
+        this.endRelease = endRelease;
     }
 
     public static void main(String[] args) {
@@ -31,6 +33,16 @@ public class LeadTimeCalculator {
                 .desc("Repository in format 'owner/repo'")
                 .required()
                 .build());
+        options.addOption(Option.builder("s")
+                .longOpt("start-release")
+                .hasArg()
+                .desc("Start release tag (optional)")
+                .build());
+        options.addOption(Option.builder("e")
+                .longOpt("end-release")
+                .hasArg()
+                .desc("End release tag (optional)")
+                .build());
 
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
@@ -39,7 +51,9 @@ public class LeadTimeCalculator {
             CommandLine cmd = parser.parse(options, args);
             LeadTimeCalculator calculator = new LeadTimeCalculator(
                     cmd.getOptionValue("token"),
-                    cmd.getOptionValue("repository")
+                    cmd.getOptionValue("repository"),
+                    cmd.getOptionValue("start-release"),
+                    cmd.getOptionValue("end-release")
             );
             calculator.calculateLeadTimes();
         } catch (ParseException e) {
@@ -62,6 +76,11 @@ public class LeadTimeCalculator {
             return;
         }
         
+        if (releases.isEmpty()) {
+            System.err.println("No releases found in repository");
+            return;
+        }
+
         // Sort releases by creation date
         releases.sort((r1, r2) -> {
             try {
@@ -70,7 +89,49 @@ public class LeadTimeCalculator {
                 throw new RuntimeException("Error comparing release dates", e);
             }
         });
-        
+
+        // Filter releases based on start and end tags
+        int startIndex = 0;
+        int endIndex = releases.size() - 1;
+
+        if (startRelease != null) {
+            boolean found = false;
+            for (int i = 0; i < releases.size(); i++) {
+                if (releases.get(i).getTagName().equals(startRelease)) {
+                    startIndex = i;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                System.err.println("Start release tag '" + startRelease + "' not found");
+                return;
+            }
+        }
+
+        if (endRelease != null) {
+            boolean found = false;
+            for (int i = 0; i < releases.size(); i++) {
+                if (releases.get(i).getTagName().equals(endRelease)) {
+                    endIndex = i;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                System.err.println("End release tag '" + endRelease + "' not found");
+                return;
+            }
+        }
+
+        if (startIndex > endIndex) {
+            System.err.println("Start release is newer than end release");
+            return;
+        }
+
+        // Subset the releases list
+        releases = releases.subList(startIndex, endIndex + 1);
+
         Map<String, Duration> leadTimes = new HashMap<>();
         Map<String, List<PRData>> releasePRs = new HashMap<>();
 
@@ -122,6 +183,13 @@ public class LeadTimeCalculator {
         // Print results
         System.out.println("\nLead Time for Changes Report");
         System.out.println("===========================");
+        
+        if (startRelease != null || endRelease != null) {
+            System.out.printf("Analyzing releases from %s to %s\n",
+                startRelease != null ? startRelease : "first release",
+                endRelease != null ? endRelease : "latest release");
+            System.out.println("----------------------------------------");
+        }
         
         releasePRs.forEach((release, prs) -> {
             System.out.printf("\nRelease: %s\n", release);
