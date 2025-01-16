@@ -1,111 +1,71 @@
-# Lead Time Calculator
+# Lead Time for Changes Analyzer
 
-This command-line utility calculates the Lead Time for Changes (LTC) metric for GitHub repositories. Two versions are available:
-
-- **LeadTimeCalculator (v1)**: Measures lead time from when a pull request is merged until it is released.
-- **LeadTimeCalculatorv2 (v2)**: Measures lead time from the first commit in a pull request until it is released, providing more accurate metrics.
+A tool to analyze lead time for changes in Git repositories by examining pull requests and their time to release.
 
 ## Features
 
-### Version 1 Features
-- Calculates lead time from PR merge to release
-- Uses local git operations for efficient PR analysis
-- Maintains persistent repository clones
-- Provides basic per-release metrics
-- Shows mean lead time statistics
-
-### Version 2 Features
-- Calculates lead time from first commit to release
-- Uses GitHub API for accurate PR analysis
-- Provides detailed per-release metrics including:
-  - PR title and author
-  - First commit date
-  - Merge date
-  - Base branch information
-- Shows statistical analysis including mean and median
-- Better handles complex git histories
-
-## Prerequisites
-
-- Java 17 or higher
-- Maven
-- Git command-line tool
-- GitHub Personal Access Token with repo scope (optional for public repositories)
-
-## Building
-
-```bash
-mvn clean package
-```
-
-This will create executable JARs with all dependencies included:
-- `target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar` (v1)
-- `target/lead-time-calculatorv2-1.0-SNAPSHOT-jar-with-dependencies.jar` (v2)
+- Analyze lead time for changes between any two Git releases/tags
+- Support for both local Git repositories and GitHub repositories
+- Automatic repository cloning and caching for GitHub repositories
+- Pull request detection from commit messages
+- Detailed lead time calculation for each pull request
+- Summary statistics for the analyzed time period
+- Debug logging support for detailed analysis
 
 ## Usage
 
-Both versions use the same command-line interface:
+You can analyze a repository in two ways:
 
+1. Using a local Git repository:
 ```bash
-# Version 1
-java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
-    -t <github-token> \
-    -r <owner/repository> \
-    [-s <start-release>] \
-    [-e <end-release>] \
-    [-l <limit>] \
-    [-u <github-url>] \
-    [-d <debug>]
-
-# Version 2
-java -jar target/lead-time-calculatorv2-1.0-SNAPSHOT-jar-with-dependencies.jar \
-    -t <github-token> \
-    -r <owner/repository> \
-    [-s <start-release>] \
-    [-e <end-release>] \
-    [-l <limit>] \
-    [-u <github-url>] \
-    [-d <debug>]
+java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
+  --directory /path/to/repo \
+  -s v1.0.0 \
+  -e v2.0.0
 ```
 
-### Arguments
+2. Using a GitHub repository URL:
+```bash
+java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
+  --github-url https://github.com/owner/repo \
+  -s v1.0.0 \
+  -e v2.0.0
+```
 
-- `-t, --token`: GitHub Personal Access Token (optional for public repositories)
-- `-r, --repository`: The repository to analyze in the format `owner/repository`
-- `-s, --start-release`: (Optional) Start release tag to analyze from
-- `-e, --end-release`: (Optional) End release tag to analyze until
-- `-l, --limit`: (Optional) Limit the number of releases to analyze
-- `-u, --github-url`: (Optional) Custom GitHub URL for enterprise installations
-- `-d, --debug`: (Optional) Enable debug logging
+### Options
+
+- `--directory` or `-D`: Path to local Git repository
+- `--github-url` or `-g`: Full GitHub repository URL
+- `-s` or `--start-release`: Start release tag/commit (defaults to end-release~1)
+- `-e` or `--end-release`: End release tag/commit (defaults to HEAD)
+- `-d` or `--debug`: Enable debug logging
+- `-l` or `--limit`: Limit number of releases to analyze
 
 ### Examples
 
+1. Analyze local repository between two tags:
 ```bash
-# Version 1: Analyze the latest 3 releases
-java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
-    -r spring-projects/spring-framework \
-    -l 3
+java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
+  --directory /path/to/repo \
+  -s v1.0.0 \
+  -e v2.0.0
+```
 
-# Version 2: Analyze specific releases with more detailed output
-java -jar target/lead-time-calculatorv2-1.0-SNAPSHOT-jar-with-dependencies.jar \
-    -t ghp_your_token_here \
-    -r spring-projects/spring-framework \
-    -s v6.1.0 \
-    -e v6.1.1
+2. Analyze GitHub repository between two tags:
+```bash
+java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
+  --github-url https://github.com/intuit/auto \
+  -s v11.0.5 \
+  -e v11.1.0
+```
 
-# Version 1: Analyze with debug logging enabled
-java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
-    -r spring-projects/spring-framework \
-    -l 3 \
-    -d
-
-# Version 2: Analyze with debug logging enabled
-java -jar target/lead-time-calculatorv2-1.0-SNAPSHOT-jar-with-dependencies.jar \
-    -t ghp_your_token_here \
-    -r spring-projects/spring-framework \
-    -s v6.1.0 \
-    -e v6.1.1 \
-    -d
+3. Analyze with debug logging enabled:
+```bash
+java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
+  --github-url https://github.com/intuit/auto \
+  -s v11.0.5 \
+  -e v11.1.0 \
+  --debug
 ```
 
 You can also enable debug logging by setting the environment variable:
@@ -113,56 +73,21 @@ You can also enable debug logging by setting the environment variable:
 export LOGBACK_LEVEL=DEBUG
 ```
 
+## Build
+
+To build the project:
+```bash
+mvn clean package
+```
+
+This will create an executable jar with all dependencies in the `target` directory.
+
 ## Output Format
 
-### Version 1 Output
-```
-Processing release: v6.2.1
-PR #33891:
-  Author:    youabledev
-  Branch:    main
-  Lead Time: 2 days
-
-Average lead time: 15 days
-```
-
-### Version 2 Output
-```
-Release: v6.2.1
-Created at: 2024-12-12T09:18:03Z
-
-PR #33891
-  Title:       Fix bug in authentication flow
-  Author:      youabledev
-  Base Branch: main
-  First Commit: 2024-12-08T15:30:00Z
-  Merged At:    2024-12-10T07:47:52Z
-  Lead Time:    1.7 days
-
-Release Statistics:
-  Total PRs:         15
-  Average Lead Time: 2.3 days
-  Median Lead Time:  1.8 days
-```
-
-## Implementation Details
-
-### Version 1
-- Uses local git operations
-- Calculates lead time from merge to release
-- Maintains persistent repository clones
-- Basic statistical analysis
-
-### Version 2
-- Uses GitHub API for accurate data
-- Calculates lead time from first commit
-- Provides more detailed PR information
-- Advanced statistical analysis
-- Better handles complex workflows
-
-## Notes
-
-- Version 2 provides more accurate lead time measurements by considering the first commit
-- Version 2 requires more GitHub API calls but provides better data
-- Both versions support the same command-line interface
-- Choose Version 1 for basic metrics or Version 2 for detailed analysis
+The tool provides:
+1. Individual lead time for each detected pull request
+2. Summary statistics including:
+   - Average lead time
+   - Median lead time
+   - Total number of pull requests analyzed
+   - Time period analyzed
