@@ -457,12 +457,10 @@ public class LeadTimeCalculator {
                         var prUrl = String.format("%s/repos/%s/pulls/%s", githubApiUrl, repository, prNumber);
                         var prRequest = createRequest(prUrl).GET().build();
                         var prResponse = client.send(prRequest, HttpResponse.BodyHandlers.ofString());
-                        
+
                         if (prResponse.statusCode() == 404) {
-                            // PR was deleted or is not accessible, try the issues API
-                            prUrl = String.format("%s/repos/%s/issues/%s", githubApiUrl, repository, prNumber);
-                            prRequest = createRequest(prUrl).GET().build();
-                            prResponse = client.send(prRequest, HttpResponse.BodyHandlers.ofString());
+                            System.err.println("PR #" + prNumber + " not found or not accessible");
+                            continue;
                         }
                         
                         if (prResponse.statusCode() != 200) {
@@ -472,10 +470,17 @@ public class LeadTimeCalculator {
                         
                         var prJson = mapper.readTree(prResponse.body());
                         
-                        // Check if PR was actually merged
+                        // First check if PR is merged
+                        boolean isMerged = prJson.path("merged").asBoolean(false);
+                        if (!isMerged) {
+                            System.out.println("Skipping PR #" + prNumber + ": Not merged");
+                            continue;
+                        }
+
+                        // Get merge date
                         String mergedAt = prJson.path("merged_at").asText(null);
                         if (mergedAt == null || mergedAt.isEmpty()) {
-                            System.out.println("Skipping PR #" + prNumber + ": Not merged");
+                            System.err.println("Warning: PR #" + prNumber + " is marked as merged but has no merge date");
                             continue;
                         }
 
