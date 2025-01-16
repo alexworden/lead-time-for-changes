@@ -24,6 +24,8 @@ public class LeadTimeCalculator {
     private final HttpClient client;
     private final ObjectMapper mapper;
     private final Map<String, String> prCommitInfo;
+    private String githubApiUrl = "https://api.github.com";
+    private String githubUrl = "https://github.com";
 
     public LeadTimeCalculator(String token, String repository, String startRelease, String endRelease, int limit) {
         System.out.println("Initializing LeadTimeCalculator for " + repository);
@@ -37,6 +39,14 @@ public class LeadTimeCalculator {
             .build();
         this.mapper = new ObjectMapper();
         this.prCommitInfo = new HashMap<>();
+    }
+
+    public void setGitHubUrl(String url) {
+        this.githubUrl = url;
+    }
+
+    public void setGitHubApiUrl(String url) {
+        this.githubApiUrl = url;
     }
 
     private HttpRequest.Builder createRequest(String url) {
@@ -53,7 +63,7 @@ public class LeadTimeCalculator {
     }
 
     private void checkRateLimit() throws IOException, InterruptedException {
-        var request = createRequest("https://api.github.com/rate_limit").GET().build();
+        var request = createRequest(githubApiUrl + "/rate_limit").GET().build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
         
         if (response.statusCode() == 200) {
@@ -75,7 +85,7 @@ public class LeadTimeCalculator {
         }
     }
 
-    private Path getOrCreateGitRepo() throws IOException, InterruptedException {
+    private String getOrCreateGitRepo() throws IOException, InterruptedException {
         // Create base directory for all repo clones if it doesn't exist
         Path baseDir = Paths.get(System.getProperty("user.home"), "LeadTimeForChanges_Temp_Git_Clones");
         if (!Files.exists(baseDir)) {
@@ -88,7 +98,7 @@ public class LeadTimeCalculator {
 
         if (!Files.exists(repoPath)) {
             // Clone the repository if it doesn't exist
-            String repoUrl = "https://github.com/" + repository + ".git";
+            String repoUrl = githubUrl + "/" + repository + ".git";
             System.out.println("Cloning repository for the first time...");
             ProcessBuilder pb = new ProcessBuilder("git", "clone", "--bare", repoUrl, repoPath.toString());
             Process p = pb.start();
@@ -106,21 +116,21 @@ public class LeadTimeCalculator {
             }
         }
 
-        return repoPath;
+        return repoPath.toString();
     }
 
     private List<String> getPullRequestsFromGitLog(String repository, String fromTag, String toTag) throws IOException, InterruptedException {
         // Get or create the git repository
-        Path repoPath = getOrCreateGitRepo();
+        String repoPath = getOrCreateGitRepo();
         
         System.out.println("Verifying tags...");
         ProcessBuilder pb = new ProcessBuilder("git", "tag", "-l", fromTag);
-        pb.directory(repoPath.toFile());
+        pb.directory(Paths.get(repoPath).toFile());
         Process p = pb.start();
         boolean fromTagExists = p.waitFor() == 0 && !new String(p.getInputStream().readAllBytes()).trim().isEmpty();
         
         pb = new ProcessBuilder("git", "tag", "-l", toTag);
-        pb.directory(repoPath.toFile());
+        pb.directory(Paths.get(repoPath).toFile());
         p = pb.start();
         boolean toTagExists = p.waitFor() == 0 && !new String(p.getInputStream().readAllBytes()).trim().isEmpty();
 
@@ -132,7 +142,7 @@ public class LeadTimeCalculator {
 
         // Get the commit hashes for both tags
         pb = new ProcessBuilder("git", "rev-parse", fromTag);
-        pb.directory(repoPath.toFile());
+        pb.directory(Paths.get(repoPath).toFile());
         p = pb.start();
         String fromCommit = new String(p.getInputStream().readAllBytes()).trim();
         if (p.waitFor() != 0 || fromCommit.isEmpty()) {
@@ -140,7 +150,7 @@ public class LeadTimeCalculator {
         }
 
         pb = new ProcessBuilder("git", "rev-parse", toTag);
-        pb.directory(repoPath.toFile());
+        pb.directory(Paths.get(repoPath).toFile());
         p = pb.start();
         String toCommit = new String(p.getInputStream().readAllBytes()).trim();
         if (p.waitFor() != 0 || toCommit.isEmpty()) {
@@ -149,7 +159,7 @@ public class LeadTimeCalculator {
 
         // Find the merge base (common ancestor) of the two tags
         pb = new ProcessBuilder("git", "merge-base", fromTag, toTag);
-        pb.directory(repoPath.toFile());
+        pb.directory(Paths.get(repoPath).toFile());
         p = pb.start();
         String mergeBase = new String(p.getInputStream().readAllBytes()).trim();
         if (p.waitFor() != 0 || mergeBase.isEmpty()) {
@@ -174,7 +184,7 @@ public class LeadTimeCalculator {
                 "--format=%H %aI %ae %s",
                 mergeBase + ".." + toCommit
             );
-            pb.directory(repoPath.toFile());
+            pb.directory(Paths.get(repoPath).toFile());
             p = pb.start();
             
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
@@ -196,7 +206,7 @@ public class LeadTimeCalculator {
                 "--format=%H %aI %ae %s",
                 mergeBase + ".." + fromCommit
             );
-            pb.directory(repoPath.toFile());
+            pb.directory(Paths.get(repoPath).toFile());
             p = pb.start();
             
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
@@ -218,7 +228,7 @@ public class LeadTimeCalculator {
                 "--format=%H %aI %ae %s",
                 fromCommit + ".." + toCommit
             );
-            pb.directory(repoPath.toFile());
+            pb.directory(Paths.get(repoPath).toFile());
             p = pb.start();
             
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
@@ -350,7 +360,7 @@ public class LeadTimeCalculator {
             checkRateLimit();
             
             // Get releases with pagination and limit
-            var releasesUrl = String.format("https://api.github.com/repos/%s/releases?per_page=%d", repository, limit);
+            var releasesUrl = String.format("%s/repos/%s/releases?per_page=%d", githubApiUrl, repository, limit);
             var request = createRequest(releasesUrl).GET().build();
             
             var response = client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -443,13 +453,13 @@ public class LeadTimeCalculator {
                 Map<String, PullRequest> prs = new HashMap<>();
                 for (String prNumber : prNumbers) {
                     try {
-                        var prUrl = String.format("https://api.github.com/repos/%s/pulls/%s", repository, prNumber);
+                        var prUrl = String.format("%s/repos/%s/pulls/%s", githubApiUrl, repository, prNumber);
                         var prRequest = createRequest(prUrl).GET().build();
                         var prResponse = client.send(prRequest, HttpResponse.BodyHandlers.ofString());
                         
                         if (prResponse.statusCode() == 404) {
                             // PR was deleted or is not accessible, try the issues API
-                            prUrl = String.format("https://api.github.com/repos/%s/issues/%s", repository, prNumber);
+                            prUrl = String.format("%s/repos/%s/issues/%s", githubApiUrl, repository, prNumber);
                             prRequest = createRequest(prUrl).GET().build();
                             prResponse = client.send(prRequest, HttpResponse.BodyHandlers.ofString());
                         }
@@ -514,15 +524,16 @@ public class LeadTimeCalculator {
         }
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         System.out.println("Starting Lead Time Calculator...");
         Options options = new Options();
 
-        options.addOption("r", "repository", true, "GitHub repository in format owner/repo")
-               .addOption("s", "start-release", true, "Start release tag (optional)")
-               .addOption("e", "end-release", true, "End release tag (optional)")
-               .addOption("t", "token", true, "GitHub token (optional, can also use LEAD_TIME_GITHUB_TOKEN env var)")
-               .addOption("l", "limit", true, "Maximum number of releases to analyze (default: 10)");
+        options.addOption("t", "token", true, "GitHub Personal Access Token");
+        options.addOption("r", "repository", true, "Repository in format owner/repository");
+        options.addOption("s", "start-release", true, "Start release tag");
+        options.addOption("e", "end-release", true, "End release tag");
+        options.addOption("l", "limit", true, "Limit number of releases to analyze");
+        options.addOption("u", "github-url", true, "GitHub URL (e.g., https://github.mycompany.com)");
 
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
@@ -535,13 +546,22 @@ public class LeadTimeCalculator {
                 System.exit(1);
             }
 
+            String token = cmd.getOptionValue("t");
             String repository = cmd.getOptionValue("r");
             String startRelease = cmd.getOptionValue("s");
             String endRelease = cmd.getOptionValue("e");
-            String token = cmd.getOptionValue("t", System.getenv("LEAD_TIME_GITHUB_TOKEN"));
-            int limit = Integer.parseInt(cmd.getOptionValue("l", "10"));
+            int limit = cmd.hasOption("l") ? Integer.parseInt(cmd.getOptionValue("l")) : Integer.MAX_VALUE;
+            String githubUrl = cmd.getOptionValue("u", "https://github.com");
 
+            System.out.println("Starting Lead Time Calculator...");
             LeadTimeCalculator calculator = new LeadTimeCalculator(token, repository, startRelease, endRelease, limit);
+            
+            // Set custom GitHub URL if provided
+            if (cmd.hasOption("u")) {
+                calculator.setGitHubUrl(githubUrl);
+                calculator.setGitHubApiUrl(githubUrl.replace("github", "api.github"));
+            }
+            
             try {
                 calculator.calculateLeadTimes();
             } catch (IOException | InterruptedException e) {

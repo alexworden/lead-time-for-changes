@@ -38,7 +38,8 @@ java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
     -r <owner/repository> \
     [-s <start-release>] \
     [-e <end-release>] \
-    [-l <limit>]
+    [-l <limit>] \
+    [-u <github-url>]
 ```
 
 ### Arguments
@@ -48,6 +49,7 @@ java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
 - `-s, --start-release`: (Optional) Start release tag to analyze from
 - `-e, --end-release`: (Optional) End release tag to analyze until
 - `-l, --limit`: (Optional) Limit the number of releases to analyze
+- `-u, --github-url`: (Optional) Custom GitHub URL for enterprise installations (e.g., https://github.mycompany.com)
 
 If neither start nor end release is specified, all releases will be analyzed.
 If only start release is specified, analysis will be from that release to the latest.
@@ -75,6 +77,12 @@ java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
 java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
     -t ghp_your_token_here \
     -r spring-projects/spring-framework
+
+# Analyze repository on enterprise GitHub
+java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
+    -t ghp_your_token_here \
+    -r myteam/myproject \
+    -u https://github.mycompany.com
 ```
 
 ## Output
