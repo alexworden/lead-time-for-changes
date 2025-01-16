@@ -75,29 +75,52 @@ public class LeadTimeCalculator {
         }
     }
 
-    private List<String> getPullRequestsFromGitLog(String repository, String fromTag, String toTag) throws IOException, InterruptedException {
-        // Clone or fetch the repository to a temp directory
-        Path tempDir = Files.createTempDirectory("lead-time-calc");
-        String repoUrl = "https://github.com/" + repository + ".git";
-        
-        System.out.println("Cloning repository to analyze commits...");
-        
-        // Clone the repository
-        ProcessBuilder pb = new ProcessBuilder("git", "clone", "--bare", repoUrl, tempDir.toString());
-        Process p = pb.start();
-        if (p.waitFor() != 0) {
-            throw new IOException("Failed to clone repository");
+    private Path getOrCreateGitRepo() throws IOException, InterruptedException {
+        // Create base directory for all repo clones if it doesn't exist
+        Path baseDir = Paths.get(System.getProperty("user.home"), "LeadTimeForChanges_Temp_Git_Clones");
+        if (!Files.exists(baseDir)) {
+            Files.createDirectories(baseDir);
         }
 
-        // First verify the tags exist
+        // Create a directory name based on the repository name (replace / with _)
+        String repoDir = repository.replace('/', '_');
+        Path repoPath = baseDir.resolve(repoDir);
+
+        if (!Files.exists(repoPath)) {
+            // Clone the repository if it doesn't exist
+            String repoUrl = "https://github.com/" + repository + ".git";
+            System.out.println("Cloning repository for the first time...");
+            ProcessBuilder pb = new ProcessBuilder("git", "clone", "--bare", repoUrl, repoPath.toString());
+            Process p = pb.start();
+            if (p.waitFor() != 0) {
+                throw new IOException("Failed to clone repository");
+            }
+        } else {
+            // Update existing repository
+            System.out.println("Updating existing repository clone...");
+            ProcessBuilder pb = new ProcessBuilder("git", "fetch", "--all");
+            pb.directory(repoPath.toFile());
+            Process p = pb.start();
+            if (p.waitFor() != 0) {
+                throw new IOException("Failed to update repository");
+            }
+        }
+
+        return repoPath;
+    }
+
+    private List<String> getPullRequestsFromGitLog(String repository, String fromTag, String toTag) throws IOException, InterruptedException {
+        // Get or create the git repository
+        Path repoPath = getOrCreateGitRepo();
+        
         System.out.println("Verifying tags...");
-        pb = new ProcessBuilder("git", "tag", "-l", fromTag);
-        pb.directory(tempDir.toFile());
-        p = pb.start();
+        ProcessBuilder pb = new ProcessBuilder("git", "tag", "-l", fromTag);
+        pb.directory(repoPath.toFile());
+        Process p = pb.start();
         boolean fromTagExists = p.waitFor() == 0 && !new String(p.getInputStream().readAllBytes()).trim().isEmpty();
         
         pb = new ProcessBuilder("git", "tag", "-l", toTag);
-        pb.directory(tempDir.toFile());
+        pb.directory(repoPath.toFile());
         p = pb.start();
         boolean toTagExists = p.waitFor() == 0 && !new String(p.getInputStream().readAllBytes()).trim().isEmpty();
 
@@ -109,7 +132,7 @@ public class LeadTimeCalculator {
 
         // Get the commit hashes for both tags
         pb = new ProcessBuilder("git", "rev-parse", fromTag);
-        pb.directory(tempDir.toFile());
+        pb.directory(repoPath.toFile());
         p = pb.start();
         String fromCommit = new String(p.getInputStream().readAllBytes()).trim();
         if (p.waitFor() != 0 || fromCommit.isEmpty()) {
@@ -117,7 +140,7 @@ public class LeadTimeCalculator {
         }
 
         pb = new ProcessBuilder("git", "rev-parse", toTag);
-        pb.directory(tempDir.toFile());
+        pb.directory(repoPath.toFile());
         p = pb.start();
         String toCommit = new String(p.getInputStream().readAllBytes()).trim();
         if (p.waitFor() != 0 || toCommit.isEmpty()) {
@@ -126,7 +149,7 @@ public class LeadTimeCalculator {
 
         // Find the merge base (common ancestor) of the two tags
         pb = new ProcessBuilder("git", "merge-base", fromTag, toTag);
-        pb.directory(tempDir.toFile());
+        pb.directory(repoPath.toFile());
         p = pb.start();
         String mergeBase = new String(p.getInputStream().readAllBytes()).trim();
         if (p.waitFor() != 0 || mergeBase.isEmpty()) {
@@ -151,7 +174,7 @@ public class LeadTimeCalculator {
                 "--format=%H %aI %ae %s",
                 mergeBase + ".." + toCommit
             );
-            pb.directory(tempDir.toFile());
+            pb.directory(repoPath.toFile());
             p = pb.start();
             
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
@@ -173,7 +196,7 @@ public class LeadTimeCalculator {
                 "--format=%H %aI %ae %s",
                 mergeBase + ".." + fromCommit
             );
-            pb.directory(tempDir.toFile());
+            pb.directory(repoPath.toFile());
             p = pb.start();
             
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
@@ -195,7 +218,7 @@ public class LeadTimeCalculator {
                 "--format=%H %aI %ae %s",
                 fromCommit + ".." + toCommit
             );
-            pb.directory(tempDir.toFile());
+            pb.directory(repoPath.toFile());
             p = pb.start();
             
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
@@ -259,10 +282,6 @@ public class LeadTimeCalculator {
         }
 
         System.out.println("Found " + prNumbers.size() + " merged pull requests");
-
-        // Cleanup
-        pb = new ProcessBuilder("rm", "-rf", tempDir.toString());
-        pb.start().waitFor();
 
         List<String> sortedPRs = new ArrayList<>(prNumbers);
         Collections.sort(sortedPRs, (a, b) -> Integer.parseInt(a) - Integer.parseInt(b));
