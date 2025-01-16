@@ -85,7 +85,7 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass>org.devmetrics.LeadTimeForChangesAnalyzer</mainClass>
+                            <mainClass>org.devmetrics.lt4c.CLI</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

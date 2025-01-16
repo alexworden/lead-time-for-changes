@@ -1,6 +1,5 @@
-package org.devmetrics;
+package org.devmetrics.lt4c;
 
-import org.apache.commons.cli.*;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.LogCommand;
 import org.eclipse.jgit.lib.ObjectId;
@@ -17,63 +16,20 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class LeadTimeForChangesAnalyzer {
-    private static final Logger logger = LoggerFactory.getLogger(LeadTimeForChangesAnalyzer.class);
+public class LeadTimeAnalyzer {
+    private static final Logger logger = LoggerFactory.getLogger(LeadTimeAnalyzer.class);
     private static final Pattern PR_MERGE_PATTERN = Pattern.compile("Merge pull request #(\\d+) from (.+)");
     private static final Pattern PR_SQUASH_PATTERN = Pattern.compile("\\(#(\\d+)\\)$");
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z");
-    private static final String DEFAULT_CACHE_DIR = System.getProperty("user.home") + "/.leadtime/repos";
 
     private final Repository repository;
     private final Git git;
 
-    public LeadTimeForChangesAnalyzer(String repoUrl) throws Exception {
-        File repoDir = getOrCreateGitRepo(repoUrl);
+    public LeadTimeAnalyzer(File repoDir) throws Exception {
         repository = new FileRepositoryBuilder()
                 .setGitDir(new File(repoDir, ".git"))
                 .build();
         git = new Git(repository);
-    }
-
-    public LeadTimeForChangesAnalyzer(File repoDir) throws Exception {
-        repository = new FileRepositoryBuilder()
-                .setGitDir(new File(repoDir, ".git"))
-                .build();
-        git = new Git(repository);
-    }
-
-    private File getOrCreateGitRepo(String repoUrl) throws Exception {
-        try {
-            // Create base directory for cached repositories
-            File baseDir = new File(DEFAULT_CACHE_DIR);
-            if (!baseDir.exists()) {
-                baseDir.mkdirs();
-            }
-
-            // Convert URL to directory name
-            String repoName = repoUrl.substring(repoUrl.lastIndexOf('/') + 1).replace(".git", "");
-            File repoDir = new File(baseDir, repoName);
-
-            if (!repoDir.exists()) {
-                // Clone the repository if it doesn't exist
-                logger.info("Cloning repository from {}...", repoUrl);
-                Git.cloneRepository()
-                    .setURI(repoUrl)
-                    .setDirectory(repoDir)
-                    .call();
-                logger.info("Repository cloned successfully");
-            } else {
-                // Update existing repository
-                logger.info("Updating existing repository clone...");
-                Git git = Git.open(repoDir);
-                git.fetch().setRemote("origin").call();
-                logger.info("Repository updated successfully");
-            }
-
-            return repoDir;
-        } catch (Exception e) {
-            throw new Exception("Failed to prepare git repository: " + e.getMessage(), e);
-        }
     }
 
     public void analyzeRelease(String releaseRef, String previousReleaseRef) throws Exception {
@@ -196,72 +152,6 @@ public class LeadTimeForChangesAnalyzer {
             return values[middle];
         } else {
             return (values[middle-1] + values[middle]) / 2.0;
-        }
-    }
-
-    public static void main(String[] args) {
-        Options options = new Options();
-        options.addOption(Option.builder("D")
-                .longOpt("directory")
-                .hasArg()
-                .desc("Local Git repository directory")
-                .build());
-        options.addOption(Option.builder("g")
-                .longOpt("github-url")
-                .hasArg()
-                .desc("Full GitHub repository URL (e.g., https://github.com/owner/repo)")
-                .build());
-        options.addOption("r", "repository", true, "Repository in format owner/repository");
-        options.addOption("s", "start-release", true, "Start release tag");
-        options.addOption("e", "end-release", true, "End release tag");
-        options.addOption("l", "limit", true, "Limit number of releases to analyze");
-        options.addOption("d", "debug", false, "Enable debug logging");
-
-        CommandLineParser parser = new DefaultParser();
-        HelpFormatter formatter = new HelpFormatter();
-
-        try {
-            CommandLine cmd = parser.parse(options, args);
-
-            // Initialize analyzer based on input method
-            LeadTimeForChangesAnalyzer analyzer;
-            if (cmd.hasOption("g")) {
-                // Use GitHub URL
-                String githubUrl = cmd.getOptionValue("g");
-                analyzer = new LeadTimeForChangesAnalyzer(githubUrl);
-                System.out.println("Using GitHub repository: " + githubUrl);
-            } else if (cmd.hasOption("D")) {
-                // Use local directory
-                File repoDir = new File(cmd.getOptionValue("D"));
-                analyzer = new LeadTimeForChangesAnalyzer(repoDir);
-                System.out.println("Using local repository: " + repoDir.getAbsolutePath());
-            } else {
-                System.err.println("Error: Must specify either --github-url or --directory");
-                formatter.printHelp("LeadTimeForChangesAnalyzer", options);
-                System.exit(1);
-                return;
-            }
-
-            // Get release references, defaulting to HEAD and HEAD~1 if not specified
-            String endRelease = cmd.getOptionValue("e", "HEAD");
-            String startRelease = cmd.getOptionValue("s", endRelease + "~1");
-
-            System.out.println("Starting Lead Time for Changes Analyzer...");
-            System.out.println("Start Release: " + startRelease);
-            System.out.println("End Release: " + endRelease);
-            System.out.println();
-
-            // Run analysis
-            analyzer.analyzeRelease(endRelease, startRelease);
-
-        } catch (ParseException e) {
-            System.err.println("Error parsing command line arguments: " + e.getMessage());
-            formatter.printHelp("LeadTimeForChangesAnalyzer", options);
-            System.exit(1);
-        } catch (Exception e) {
-            System.err.println("Error during analysis: " + e.getMessage());
-            e.printStackTrace();
-            System.exit(1);
         }
     }
 }
