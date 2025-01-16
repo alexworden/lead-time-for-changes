@@ -98,6 +98,7 @@ The tool outputs a detailed report showing:
    - Author's GitHub username and email
    - Merge commit hash
    - Merge date and commit message
+   - Branch
    - Lead time in days
 
 3. Statistical Analysis:
@@ -114,6 +115,7 @@ Pull Request Details:
     Commit:    4f815b00
     Merged:    2024-12-10T07:47:52+01:00
     Message:   Merge pull request #33891 from youabledev
+    Branch:    main
     Lead Time: 2 days
 
 Lead Time Statistics:

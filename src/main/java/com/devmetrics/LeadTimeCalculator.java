@@ -119,7 +119,7 @@ public class LeadTimeCalculator {
         return repoPath.toString();
     }
 
-    private List<String> getPullRequestsFromGitLog(String repository, String fromTag, String toTag) throws IOException, InterruptedException {
+    private List<String> getPullRequestsFromGitLog(String repository, String fromTag, String toTag) throws IOException, InterruptedException{
         // Get or create the git repository
         String repoPath = getOrCreateGitRepo();
         
@@ -299,32 +299,22 @@ public class LeadTimeCalculator {
     }
 
     private static class PullRequest {
-        final String number;
-        final String title;
-        final String author;
-        final String authorEmail;
-        final String commitHash;
-        final Instant mergedAt;
-        final String message;
-
-        PullRequest(String number, String title, String author, String authorEmail, 
-                   String commitHash, Instant mergedAt, String message) {
-            this.number = number;
-            this.title = title;
-            this.author = author;
-            this.authorEmail = authorEmail;
-            this.commitHash = commitHash;
-            this.mergedAt = mergedAt;
-            this.message = message;
-        }
+        String number;
+        String title;
+        String author;
+        String authorEmail;
+        String commitHash;
+        Instant mergedAt;
+        String message;
+        String baseBranch;
     }
 
-    private void printPRDetails(PullRequest pr, Instant releaseDate) {
-        Duration leadTime = Duration.between(pr.mergedAt, releaseDate);
-        System.out.printf("  PR #%-5s by %s (%s)%n", pr.number, pr.author, pr.authorEmail);
+    private void printPullRequestDetails(PullRequest pr, Duration leadTime) {
+        System.out.printf("  PR #%s by %s (%s)%n", pr.number, pr.author, pr.authorEmail);
         System.out.printf("    Commit:    %s%n", pr.commitHash);
         System.out.printf("    Merged:    %s%n", pr.mergedAt);
         System.out.printf("    Message:   %s%n", pr.message);
+        System.out.printf("    Branch:    %s%n", pr.baseBranch);
         System.out.printf("    Lead Time: %d days%n", leadTime.toDays());
     }
 
@@ -469,30 +459,17 @@ public class LeadTimeCalculator {
                             continue;
                         }
                         
-                        var pr = mapper.readTree(prResponse.body());
-                        String title = pr.has("title") ? pr.get("title").asText() : "Unknown";
-                        String author = pr.has("user") && !pr.get("user").isNull() ? 
-                            pr.get("user").get("login").asText() : "Unknown";
-                        
-                        // Get commit info
-                        String commitInfo = prCommitInfo.get(prNumber);
-                        if (commitInfo != null) {
-                            String[] parts = commitInfo.split(" ", 4);
-                            String commitHash = parts[0];
-                            String commitDate = parts[1];
-                            String authorEmail = parts[2];
-                            String message = parts[3];
-                            
-                            prs.put(prNumber, new PullRequest(
-                                prNumber,
-                                title,
-                                author,
-                                authorEmail,
-                                commitHash.substring(0, 8),
-                                Instant.parse(commitDate),
-                                message
-                            ));
-                        }
+                        var prJson = mapper.readTree(prResponse.body());
+                        var pr = new PullRequest();
+                        pr.number = prNumber;
+                        pr.title = prJson.path("title").asText();
+                        pr.author = prJson.path("user").path("login").asText();
+                        pr.authorEmail = prCommitInfo.getOrDefault(prNumber, "unknown");
+                        pr.commitHash = prCommitInfo.getOrDefault(prNumber + "_hash", "unknown");
+                        pr.mergedAt = Instant.parse(prJson.path("merged_at").asText());
+                        pr.message = prCommitInfo.getOrDefault(prNumber + "_message", "");
+                        pr.baseBranch = prJson.path("base").path("ref").asText(); // Get base branch
+                        prs.put(prNumber, pr);
                     } catch (Exception e) {
                         System.err.println("Error processing PR #" + prNumber + ": " + e.getMessage());
                     }
@@ -506,7 +483,7 @@ public class LeadTimeCalculator {
                 System.out.println("\nPull Request Details:");
                 prs.values().stream()
                    .sorted((a, b) -> a.mergedAt.compareTo(b.mergedAt))
-                   .forEach(pr -> printPRDetails(pr, releaseDate));
+                   .forEach(pr -> printPullRequestDetails(pr, Duration.between(pr.mergedAt, releaseDate)));
 
                 // Calculate statistics
                 List<Duration> leadTimes = prs.values().stream()
