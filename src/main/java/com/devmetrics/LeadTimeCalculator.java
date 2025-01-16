@@ -7,6 +7,7 @@ import java.io.*;
 import java.net.URI;
 import java.net.http.*;
 import java.time.*;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -470,16 +471,28 @@ public class LeadTimeCalculator {
                         }
                         
                         var prJson = mapper.readTree(prResponse.body());
-                        var pr = new PullRequest();
-                        pr.number = prNumber;
-                        pr.title = prJson.path("title").asText();
-                        pr.author = prJson.path("user").path("login").asText();
-                        pr.authorEmail = prCommitInfo.getOrDefault(prNumber, "unknown");
-                        pr.commitHash = prCommitInfo.getOrDefault(prNumber + "_hash", "unknown");
-                        pr.mergedAt = Instant.parse(prJson.path("merged_at").asText());
-                        pr.message = prCommitInfo.getOrDefault(prNumber + "_message", "");
-                        pr.baseBranch = prJson.path("base").path("ref").asText(); // Get base branch
-                        prs.put(prNumber, pr);
+                        
+                        // Check if PR was actually merged
+                        String mergedAt = prJson.path("merged_at").asText(null);
+                        if (mergedAt == null || mergedAt.isEmpty()) {
+                            System.out.println("Skipping PR #" + prNumber + ": Not merged");
+                            continue;
+                        }
+
+                        try {
+                            var pr = new PullRequest();
+                            pr.number = prNumber;
+                            pr.title = prJson.path("title").asText("No title");
+                            pr.author = prJson.path("user").path("login").asText("Unknown");
+                            pr.authorEmail = prCommitInfo.getOrDefault(prNumber, "unknown");
+                            pr.commitHash = prCommitInfo.getOrDefault(prNumber + "_hash", "unknown");
+                            pr.mergedAt = Instant.parse(mergedAt);
+                            pr.message = prCommitInfo.getOrDefault(prNumber + "_message", "");
+                            pr.baseBranch = prJson.path("base").path("ref").asText("unknown");
+                            prs.put(prNumber, pr);
+                        } catch (DateTimeParseException e) {
+                            System.err.println("Error processing PR #" + prNumber + ": Invalid merge date format: " + mergedAt);
+                        }
                     } catch (Exception e) {
                         System.err.println("Error processing PR #" + prNumber + ": " + e.getMessage());
                     }
