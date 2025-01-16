@@ -14,7 +14,7 @@ This command-line utility calculates the Lead Time for Changes (LTC) metric for 
 
 - Java 17 or higher
 - Maven
-- GitHub Personal Access Token with repo scope
+- GitHub Personal Access Token with repo scope (optional for public repositories)
 
 ## Building
 
@@ -34,7 +34,7 @@ java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
 
 ### Arguments
 
-- `-t, --token`: Your GitHub Personal Access Token
+- `-t, --token`: GitHub Personal Access Token (optional for public repositories)
 - `-r, --repository`: The repository to analyze in the format `owner/repository`
 - `-s, --start-release`: (Optional) Start release tag to analyze from
 - `-e, --end-release`: (Optional) End release tag to analyze until
@@ -44,9 +44,22 @@ If only start release is specified, analysis will be from that release to the la
 If only end release is specified, analysis will be from the first release to the specified release.
 If both are specified, analysis will be limited to releases between them, inclusive.
 
+Note: While the GitHub token is optional for public repositories, using a token increases the API rate limit from 60 to 5000 requests per hour.
+
 ### Example
 
 ```bash
+# Analyze all releases in a public repository (no token)
+java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
+    -r spring-projects/spring-boot
+
+# Analyze a specific release with a token (recommended for better rate limits)
+java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
+    -t ghp_your_token_here \
+    -r octocat/Hello-World \
+    -s v1.0.0 \
+    -e v1.0.0
+
 # Analyze all releases
 java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
     -t ghp_your_token_here \
