@@ -4,14 +4,17 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.devmetrics</groupId>
-    <artifactId>lead-time-calculator</artifactId>
+    <groupId>org.devmetrics</groupId>
+    <artifactId>lead-time-for-changes</artifactId>
     <version>1.0-SNAPSHOT</version>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <jgit.version>6.7.0.202309050840-r</jgit.version>
+        <slf4j.version>2.0.9</slf4j.version>
+        <logback.version>1.4.11</logback.version>
     </properties>
 
     <dependencies>
@@ -22,11 +25,36 @@
             <version>1.314</version>
         </dependency>
         
+        <!-- JGit dependencies -->
+        <dependency>
+            <groupId>org.eclipse.jgit</groupId>
+            <artifactId>org.eclipse.jgit</artifactId>
+            <version>${jgit.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jgit</groupId>
+            <artifactId>org.eclipse.jgit.archive</artifactId>
+            <version>${jgit.version}</version>
+        </dependency>
+
         <!-- Command Line Parser -->
         <dependency>
             <groupId>commons-cli</groupId>
             <artifactId>commons-cli</artifactId>
             <version>1.5.0</version>
+        </dependency>
+
+        <!-- Logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- JSON Processing -->
@@ -57,12 +85,13 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass>com.devmetrics.LeadTimeCalculator</mainClass>
+                            <mainClass>org.devmetrics.LeadTimeForChangesAnalyzer</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
                 <executions>
                     <execution>
+                        <id>make-assembly</id>
                         <phase>package</phase>
                         <goals>
                             <goal>single</goal>

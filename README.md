@@ -1,19 +1,29 @@
 # Lead Time Calculator
 
-This command-line utility calculates the Lead Time for Changes (LTC) metric for GitHub repositories. Lead Time is measured from when a pull request is merged until it is released.
+This command-line utility calculates the Lead Time for Changes (LTC) metric for GitHub repositories. Two versions are available:
+
+- **LeadTimeCalculator (v1)**: Measures lead time from when a pull request is merged until it is released.
+- **LeadTimeCalculatorv2 (v2)**: Measures lead time from the first commit in a pull request until it is released, providing more accurate metrics.
 
 ## Features
 
-- Calculates lead time for all changes in GitHub releases
+### Version 1 Features
+- Calculates lead time from PR merge to release
 - Uses local git operations for efficient PR analysis
-- Maintains persistent repository clones to avoid repeated downloads
+- Maintains persistent repository clones
+- Provides basic per-release metrics
+- Shows mean lead time statistics
+
+### Version 2 Features
+- Calculates lead time from first commit to release
+- Uses GitHub API for accurate PR analysis
 - Provides detailed per-release metrics including:
-  - PR author and email
-  - Merge commit hash and date
-  - Complete merge commit message
-  - Lead time in days
-- Shows statistical analysis including mean, median, and 90th percentile
-- Handles complex git histories with multiple branches and merge bases
+  - PR title and author
+  - First commit date
+  - Merge date
+  - Base branch information
+- Shows statistical analysis including mean and median
+- Better handles complex git histories
 
 ## Prerequisites
 
@@ -28,18 +38,34 @@ This command-line utility calculates the Lead Time for Changes (LTC) metric for 
 mvn clean package
 ```
 
-This will create an executable JAR with all dependencies included at `target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar`
+This will create executable JARs with all dependencies included:
+- `target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar` (v1)
+- `target/lead-time-calculatorv2-1.0-SNAPSHOT-jar-with-dependencies.jar` (v2)
 
 ## Usage
 
+Both versions use the same command-line interface:
+
 ```bash
+# Version 1
 java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
     -t <github-token> \
     -r <owner/repository> \
     [-s <start-release>] \
     [-e <end-release>] \
     [-l <limit>] \
-    [-u <github-url>]
+    [-u <github-url>] \
+    [-d <debug>]
+
+# Version 2
+java -jar target/lead-time-calculatorv2-1.0-SNAPSHOT-jar-with-dependencies.jar \
+    -t <github-token> \
+    -r <owner/repository> \
+    [-s <start-release>] \
+    [-e <end-release>] \
+    [-l <limit>] \
+    [-u <github-url>] \
+    [-d <debug>]
 ```
 
 ### Arguments
@@ -49,101 +75,94 @@ java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
 - `-s, --start-release`: (Optional) Start release tag to analyze from
 - `-e, --end-release`: (Optional) End release tag to analyze until
 - `-l, --limit`: (Optional) Limit the number of releases to analyze
-- `-u, --github-url`: (Optional) Custom GitHub URL for enterprise installations (e.g., https://github.mycompany.com)
-
-If neither start nor end release is specified, all releases will be analyzed.
-If only start release is specified, analysis will be from that release to the latest.
-If only end release is specified, analysis will be from the first release to the specified release.
-If both are specified, analysis will be limited to releases between them, inclusive.
-
-Note: While the GitHub token is optional for public repositories, using a token increases the API rate limit from 60 to 5000 requests per hour.
+- `-u, --github-url`: (Optional) Custom GitHub URL for enterprise installations
+- `-d, --debug`: (Optional) Enable debug logging
 
 ### Examples
 
 ```bash
-# Analyze the latest 3 releases in a public repository
+# Version 1: Analyze the latest 3 releases
 java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
     -r spring-projects/spring-framework \
     -l 3
 
-# Analyze specific releases with a token
-java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
+# Version 2: Analyze specific releases with more detailed output
+java -jar target/lead-time-calculatorv2-1.0-SNAPSHOT-jar-with-dependencies.jar \
     -t ghp_your_token_here \
     -r spring-projects/spring-framework \
     -s v6.1.0 \
     -e v6.1.1
 
-# Analyze all releases with a token
+# Version 1: Analyze with debug logging enabled
 java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
-    -t ghp_your_token_here \
-    -r spring-projects/spring-framework
+    -r spring-projects/spring-framework \
+    -l 3 \
+    -d
 
-# Analyze repository on enterprise GitHub
-java -jar target/lead-time-calculator-1.0-SNAPSHOT-jar-with-dependencies.jar \
+# Version 2: Analyze with debug logging enabled
+java -jar target/lead-time-calculatorv2-1.0-SNAPSHOT-jar-with-dependencies.jar \
     -t ghp_your_token_here \
-    -r myteam/myproject \
-    -u https://github.mycompany.com
+    -r spring-projects/spring-framework \
+    -s v6.1.0 \
+    -e v6.1.1 \
+    -d
 ```
 
-## Output
-
-The tool outputs a detailed report showing:
-
-1. Release Information:
-   - Release tag and creation date
-   - Number of PRs included
-
-2. Pull Request Details:
-   - PR number and title
-   - Author's GitHub username and email
-   - Merge commit hash
-   - Merge date and commit message
-   - Branch
-   - Lead time in days
-
-3. Statistical Analysis:
-   - Mean lead time
-   - Median lead time
-   - 90th percentile lead time
-
-Example output:
+You can also enable debug logging by setting the environment variable:
+```bash
+export LOGBACK_LEVEL=DEBUG
 ```
-Processing release: v6.2.1 (created at 2024-12-12T09:18:03Z)
 
-Pull Request Details:
-  PR #33891 by youabledev (author@example.com)
-    Commit:    4f815b00
-    Merged:    2024-12-10T07:47:52+01:00
-    Message:   Merge pull request #33891 from youabledev
-    Branch:    main
-    Lead Time: 2 days
+## Output Format
 
-Lead Time Statistics:
-  Mean:   15 days
-  Median: 12 days
-  P90:    30 days
+### Version 1 Output
+```
+Processing release: v6.2.1
+PR #33891:
+  Author:    youabledev
+  Branch:    main
+  Lead Time: 2 days
+
+Average lead time: 15 days
+```
+
+### Version 2 Output
+```
+Release: v6.2.1
+Created at: 2024-12-12T09:18:03Z
+
+PR #33891
+  Title:       Fix bug in authentication flow
+  Author:      youabledev
+  Base Branch: main
+  First Commit: 2024-12-08T15:30:00Z
+  Merged At:    2024-12-10T07:47:52Z
+  Lead Time:    1.7 days
+
+Release Statistics:
+  Total PRs:         15
+  Average Lead Time: 2.3 days
+  Median Lead Time:  1.8 days
 ```
 
 ## Implementation Details
 
-1. **Repository Management**:
-   - Creates a persistent bare clone in `~/LeadTimeForChanges_Temp_Git_Clones/<owner>_<repo>`
-   - Updates existing clones with `git fetch --all` on subsequent runs
-   - Avoids repeated downloads of the same repository
+### Version 1
+- Uses local git operations
+- Calculates lead time from merge to release
+- Maintains persistent repository clones
+- Basic statistical analysis
 
-2. **Git Analysis**:
-   - Uses `git merge-base` to find common ancestors between releases
-   - Analyzes merge commits to identify merged PRs
-   - Extracts detailed information from commit messages
-
-3. **Performance Optimization**:
-   - Minimizes GitHub API calls by using local git operations
-   - Maintains persistent repository clones
-   - Uses bare clones to reduce disk usage
+### Version 2
+- Uses GitHub API for accurate data
+- Calculates lead time from first commit
+- Provides more detailed PR information
+- Advanced statistical analysis
+- Better handles complex workflows
 
 ## Notes
 
-- The tool creates persistent git clones in your home directory under `LeadTimeForChanges_Temp_Git_Clones`
-- Only considers merge commits to identify PRs
-- Lead time is calculated from PR merge time to release time
-- Releases must be tagged in GitHub for proper calculation
+- Version 2 provides more accurate lead time measurements by considering the first commit
+- Version 2 requires more GitHub API calls but provides better data
+- Both versions support the same command-line interface
+- Choose Version 1 for basic metrics or Version 2 for detailed analysis
