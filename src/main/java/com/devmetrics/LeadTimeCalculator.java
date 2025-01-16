@@ -63,60 +63,70 @@ public class LeadTimeCalculator {
     }
 
     private void checkRateLimit() throws IOException, InterruptedException {
-        var request = createRequest(githubApiUrl + "/rate_limit").GET().build();
-        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        
-        if (response.statusCode() == 200) {
-            var rateLimit = mapper.readTree(response.body()).get("resources").get("core");
-            int remaining = rateLimit.get("remaining").asInt();
-            long resetTime = rateLimit.get("reset").asLong();
+        try {
+            var request = createRequest(githubApiUrl + "/rate_limit").GET().build();
+            var response = client.send(request, HttpResponse.BodyHandlers.ofString());
             
-            System.out.println("Rate limit status:");
-            System.out.println("- Remaining: " + remaining);
-            System.out.println("- Resets at: " + Instant.ofEpochSecond(resetTime));
-            
-            if (remaining < 10) {
-                long waitTime = resetTime - Instant.now().getEpochSecond();
-                if (waitTime > 0) {
-                    System.out.println("Rate limit low. Please wait " + waitTime + " seconds or provide a GitHub token.");
-                    throw new IOException("Rate limit exceeded");
-                }
+            if (response.statusCode() == 401) {
+                throw new IOException("Invalid GitHub token. Please check your token and try again.");
             }
+            
+            if (response.statusCode() == 403) {
+                throw new IOException("Rate limit exceeded. Please wait or provide a GitHub token for higher limits.");
+            }
+            
+            if (response.statusCode() != 200) {
+                throw new IOException("Failed to check rate limit. Status code: " + response.statusCode());
+            }
+
+            var json = mapper.readTree(response.body());
+            var remaining = json.path("resources").path("core").path("remaining").asInt();
+            if (remaining < 100) {
+                System.out.println("Warning: Only " + remaining + " API requests remaining.");
+            }
+        } catch (IOException e) {
+            throw new IOException("Failed to check GitHub API rate limit: " + e.getMessage(), e);
         }
     }
 
     private String getOrCreateGitRepo() throws IOException, InterruptedException {
-        // Create base directory for all repo clones if it doesn't exist
-        Path baseDir = Paths.get(System.getProperty("user.home"), "LeadTimeForChanges_Temp_Git_Clones");
-        if (!Files.exists(baseDir)) {
-            Files.createDirectories(baseDir);
-        }
-
-        // Create a directory name based on the repository name (replace / with _)
-        String repoDir = repository.replace('/', '_');
-        Path repoPath = baseDir.resolve(repoDir);
-
-        if (!Files.exists(repoPath)) {
-            // Clone the repository if it doesn't exist
-            String repoUrl = githubUrl + "/" + repository + ".git";
-            System.out.println("Cloning repository for the first time...");
-            ProcessBuilder pb = new ProcessBuilder("git", "clone", "--bare", repoUrl, repoPath.toString());
-            Process p = pb.start();
-            if (p.waitFor() != 0) {
-                throw new IOException("Failed to clone repository");
+        try {
+            // Create base directory for all repo clones if it doesn't exist
+            Path baseDir = Paths.get(System.getProperty("user.home"), "LeadTimeForChanges_Temp_Git_Clones");
+            if (!Files.exists(baseDir)) {
+                Files.createDirectories(baseDir);
             }
-        } else {
-            // Update existing repository
-            System.out.println("Updating existing repository clone...");
-            ProcessBuilder pb = new ProcessBuilder("git", "fetch", "--all");
-            pb.directory(repoPath.toFile());
-            Process p = pb.start();
-            if (p.waitFor() != 0) {
-                throw new IOException("Failed to update repository");
-            }
-        }
 
-        return repoPath.toString();
+            // Create a directory name based on the repository name (replace / with _)
+            String repoDir = repository.replace('/', '_');
+            Path repoPath = baseDir.resolve(repoDir);
+
+            if (!Files.exists(repoPath)) {
+                // Clone the repository if it doesn't exist
+                String repoUrl = githubUrl + "/" + repository + ".git";
+                System.out.println("Cloning repository for the first time...");
+                ProcessBuilder pb = new ProcessBuilder("git", "clone", "--bare", repoUrl, repoPath.toString());
+                Process p = pb.start();
+                if (p.waitFor() != 0) {
+                    String error = new String(p.getErrorStream().readAllBytes());
+                    throw new IOException("Failed to clone repository: " + error.trim());
+                }
+            } else {
+                // Update existing repository
+                System.out.println("Updating existing repository clone...");
+                ProcessBuilder pb = new ProcessBuilder("git", "fetch", "--all");
+                pb.directory(repoPath.toFile());
+                Process p = pb.start();
+                if (p.waitFor() != 0) {
+                    String error = new String(p.getErrorStream().readAllBytes());
+                    throw new IOException("Failed to update repository: " + error.trim());
+                }
+            }
+
+            return repoPath.toString();
+        } catch (IOException e) {
+            throw new IOException("Failed to prepare git repository: " + e.getMessage(), e);
+        }
     }
 
     private List<String> getPullRequestsFromGitLog(String repository, String fromTag, String toTag) throws IOException, InterruptedException{
@@ -502,9 +512,7 @@ public class LeadTimeCalculator {
     }
 
     public static void main(String[] args) throws Exception {
-        System.out.println("Starting Lead Time Calculator...");
         Options options = new Options();
-
         options.addOption("t", "token", true, "GitHub Personal Access Token");
         options.addOption("r", "repository", true, "Repository in format owner/repository");
         options.addOption("s", "start-release", true, "Start release tag");
@@ -519,35 +527,68 @@ public class LeadTimeCalculator {
             CommandLine cmd = parser.parse(options, args);
 
             if (!cmd.hasOption("r")) {
+                System.err.println("Error: Missing required option: -r or --repository");
+                System.err.println("The repository must be specified in the format 'owner/repository'");
+                System.err.println("Example: -r spring-projects/spring-framework");
                 formatter.printHelp("LeadTimeCalculator", options);
                 System.exit(1);
             }
 
-            String token = cmd.getOptionValue("t");
+            String token = cmd.getOptionValue("t", System.getenv("LEAD_TIME_GITHUB_TOKEN"));
+            if (token == null || token.trim().isEmpty()) {
+                System.err.println("Warning: No GitHub token provided. This will limit API access.");
+                System.err.println("You can provide a token using:");
+                System.err.println("1. Command line: -t <token>");
+                System.err.println("2. Environment variable: LEAD_TIME_GITHUB_TOKEN");
+            }
+
             String repository = cmd.getOptionValue("r");
+            if (!repository.contains("/")) {
+                System.err.println("Error: Invalid repository format. Must be in the format 'owner/repository'");
+                System.err.println("Example: spring-projects/spring-framework");
+                System.exit(1);
+            }
+
             String startRelease = cmd.getOptionValue("s");
             String endRelease = cmd.getOptionValue("e");
             int limit = cmd.hasOption("l") ? Integer.parseInt(cmd.getOptionValue("l")) : Integer.MAX_VALUE;
             String githubUrl = cmd.getOptionValue("u", "https://github.com");
 
             System.out.println("Starting Lead Time Calculator...");
+            System.out.println("Repository: " + repository);
+            System.out.println("GitHub URL: " + githubUrl);
+            if (startRelease != null) System.out.println("Start Release: " + startRelease);
+            if (endRelease != null) System.out.println("End Release: " + endRelease);
+            if (cmd.hasOption("l")) System.out.println("Limit: " + limit + " releases");
+            System.out.println();
+
             LeadTimeCalculator calculator = new LeadTimeCalculator(token, repository, startRelease, endRelease, limit);
             
-            // Set custom GitHub URL if provided
             if (cmd.hasOption("u")) {
                 calculator.setGitHubUrl(githubUrl);
                 calculator.setGitHubApiUrl(githubUrl.replace("github", "api.github"));
             }
-            
-            try {
-                calculator.calculateLeadTimes();
-            } catch (IOException | InterruptedException e) {
-                System.err.println("An error occurred: " + e.getMessage());
-                System.exit(1);
-            }
+
+            calculator.calculateLeadTimes();
         } catch (ParseException e) {
-            System.out.println(e.getMessage());
+            System.err.println("Error parsing command line arguments: " + e.getMessage());
             formatter.printHelp("LeadTimeCalculator", options);
+            System.exit(1);
+        } catch (NumberFormatException e) {
+            System.err.println("Error: Invalid number format for limit option: " + e.getMessage());
+            System.err.println("The limit must be a positive integer.");
+            System.exit(1);
+        } catch (Exception e) {
+            System.err.println("Error: " + (e.getMessage() != null ? e.getMessage() : "An unexpected error occurred"));
+            if (e instanceof IOException) {
+                System.err.println("This might be due to:");
+                System.err.println("1. Invalid GitHub token");
+                System.err.println("2. Repository does not exist or is not accessible");
+                System.err.println("3. Network connectivity issues");
+            }
+            if (e.getCause() != null) {
+                System.err.println("Cause: " + e.getCause().getMessage());
+            }
             System.exit(1);
         }
     }
