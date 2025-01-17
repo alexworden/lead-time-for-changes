@@ -167,12 +167,23 @@ public class CLI {
 
     private static File getOrCreateGitRepo(String githubUrl, String token) throws IOException, GitAPIException {
         File cacheDir = new File(DEFAULT_CACHE_DIR);
-        String repoName = githubUrl.replaceAll(".*github\\.com[:/]", "").replaceAll("\\.git$", "").replace('/', '-');
-        File repoDir = new File(cacheDir, repoName);
+        // Remove protocol and domain, keeping the org/repo path
+        String repoPath = githubUrl.replaceAll("^https?://[^/]+/|git@[^:]+:", "").replaceAll("\\.git$", "");
+        // Split into org and repo name
+        String[] parts = repoPath.split("/");
+        if (parts.length != 2) {
+            throw new IllegalArgumentException("Invalid GitHub URL format. Expected format: domain/org/repo");
+        }
+        String orgName = parts[0];
+        String repoName = parts[1];
+        
+        // Create org directory under cache dir
+        File orgDir = new File(cacheDir, orgName);
+        File repoDir = new File(orgDir, repoName);
 
         if (!repoDir.exists()) {
             logger.info("Cloning repository {} to {}", githubUrl, repoDir);
-            cacheDir.mkdirs();
+            orgDir.mkdirs();
             Git.cloneRepository()
                     .setURI(githubUrl)
                     .setDirectory(repoDir)
