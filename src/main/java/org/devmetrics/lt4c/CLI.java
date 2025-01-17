@@ -2,6 +2,7 @@ package org.devmetrics.lt4c;
 
 import org.apache.commons.cli.*;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,6 +11,7 @@ import java.io.File;
 public class CLI {
     private static final Logger logger = LoggerFactory.getLogger(CLI.class);
     private static final String DEFAULT_CACHE_DIR = System.getProperty("user.home") + "/.leadtime/repos";
+    private static final String ENV_GIT_TOKEN = "LT4C_GIT_TOKEN";
 
     public static void main(String[] args) {
         Options options = new Options();
@@ -33,6 +35,11 @@ public class CLI {
                 .hasArg()
                 .desc("End release tag")
                 .build());
+        options.addOption(Option.builder("t")
+                .longOpt("token")
+                .hasArg()
+                .desc("Git access token (can also be set via LT4C_GIT_TOKEN environment variable)")
+                .build());
         options.addOption(Option.builder("d")
                 .longOpt("debug")
                 .desc("Enable debug logging")
@@ -52,6 +59,7 @@ public class CLI {
             String githubUrl = cmd.getOptionValue("github-url");
             String startRelease = cmd.getOptionValue("start-release");
             String endRelease = cmd.getOptionValue("end-release");
+            String token = cmd.getOptionValue("token", System.getenv(ENV_GIT_TOKEN));
 
             if (directory == null && githubUrl == null) {
                 throw new ParseException("Either --directory or --github-url must be specified");
@@ -63,11 +71,14 @@ public class CLI {
 
             File repoDir;
             if (githubUrl != null) {
-                repoDir = getOrCreateGitRepo(githubUrl);
+                repoDir = getOrCreateGitRepo(githubUrl, token);
             } else {
                 repoDir = new File(directory);
-                if (!repoDir.exists() || !new File(repoDir, ".git").exists()) {
-                    throw new ParseException("Invalid Git repository directory: " + directory);
+                try {
+                    // Try to open the Git repository to validate it
+                    Git.open(repoDir);
+                } catch (Exception e) {
+                    throw new ParseException("Invalid Git repository directory: " + directory + " - " + e.getMessage());
                 }
             }
 
@@ -85,7 +96,7 @@ public class CLI {
         }
     }
 
-    private static File getOrCreateGitRepo(String repoUrl) throws Exception {
+    private static File getOrCreateGitRepo(String repoUrl, String token) throws Exception {
         try {
             // Create base directory for cached repositories
             File baseDir = new File(DEFAULT_CACHE_DIR);
@@ -97,25 +108,36 @@ public class CLI {
             String repoName = repoUrl.substring(repoUrl.lastIndexOf('/') + 1).replace(".git", "");
             File repoDir = new File(baseDir, repoName);
 
+            // Create credentials provider if token is available
+            UsernamePasswordCredentialsProvider credentialsProvider = null;
+            if (token != null && !token.trim().isEmpty()) {
+                credentialsProvider = new UsernamePasswordCredentialsProvider(token, "");
+                logger.info("Using provided Git access token for authentication");
+            }
+
             if (!repoDir.exists()) {
                 // Clone the repository if it doesn't exist
                 logger.info("Cloning repository from {}...", repoUrl);
                 Git.cloneRepository()
                     .setURI(repoUrl)
                     .setDirectory(repoDir)
+                    .setCredentialsProvider(credentialsProvider)
                     .call();
                 logger.info("Repository cloned successfully");
             } else {
                 // Update existing repository
                 logger.info("Updating existing repository clone...");
                 Git git = Git.open(repoDir);
-                git.fetch().setRemote("origin").call();
+                git.fetch()
+                    .setRemote("origin")
+                    .setCredentialsProvider(credentialsProvider)
+                    .call();
                 logger.info("Repository updated successfully");
             }
 
             return repoDir;
         } catch (Exception e) {
-            throw new Exception("Failed to prepare git repository: " + e.getMessage(), e);
+            throw new Exception("Failed to prepare git repository: " + repoUrl + ": " + e.getMessage(), e);
         }
     }
 }

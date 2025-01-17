@@ -33,10 +33,14 @@ public class LeadTimeAnalyzer {
     }
 
     public void analyzeRelease(String releaseRef, String previousReleaseRef) throws Exception {
-        // Fetch tags first
-        logger.info("Fetching tags...");
-        git.fetch().setRefSpecs("+refs/tags/*:refs/tags/*").call();
-        logger.info("Tags fetched successfully");
+        // Only fetch tags if we have a remote repository
+        try {
+            logger.info("Fetching tags...");
+            git.fetch().setRefSpecs("+refs/tags/*:refs/tags/*").call();
+            logger.info("Tags fetched successfully");
+        } catch (org.eclipse.jgit.api.errors.InvalidRemoteException e) {
+            logger.debug("No remote repository found, skipping tag fetch");
+        }
 
         // Get release commit info
         logger.info("Resolving release references: {} and {}", releaseRef, previousReleaseRef);
