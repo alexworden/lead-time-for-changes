@@ -104,10 +104,11 @@ public class GitHubClient {
                                     PullRequest pr = new PullRequest(
                                             ghPr.getNumber(),
                                             ghPr.getUser().getLogin(),
+                                            ghPr.getCreatedAt(),
                                             ghPr.getMergedAt(),
                                             ghPr.getBase().getRef(),
                                             ghPr.getMergeCommitSha(),
-                                            ghPr.getTitle() + "\n" + (ghPr.getBody() != null ? ghPr.getBody() : "")
+                                            ghPr.getTitle()
                                     );
                                     pullRequests.add(pr);
                                 } else {
@@ -116,6 +117,7 @@ public class GitHubClient {
                                     PullRequest pr = new PullRequest(
                                             Integer.parseInt(prNumber),
                                             commit.getAuthorIdent().getName(),
+                                            new Date(commit.getCommitTime() * 1000L),
                                             new Date(commit.getCommitTime() * 1000L),
                                             "main", // Assuming main branch
                                             commit.getName(),
@@ -130,6 +132,7 @@ public class GitHubClient {
                                 PullRequest pr = new PullRequest(
                                         Integer.parseInt(prNumber),
                                         commit.getAuthorIdent().getName(),
+                                        new Date(commit.getCommitTime() * 1000L),
                                         new Date(commit.getCommitTime() * 1000L),
                                         "main", // Assuming main branch
                                         commit.getName(),

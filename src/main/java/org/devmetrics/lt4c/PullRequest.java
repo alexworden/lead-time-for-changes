@@ -5,16 +5,18 @@ import java.util.Date;
 public class PullRequest {
     private final int number;
     private final String author;
-    private final Date mergeDate;
+    private final Date createdAt;
+    private final Date mergedAt;
     private final String targetBranch;
     private final String mergeSha;
     private final String comment;
     private double leadTimeHours;
 
-    public PullRequest(int number, String author, Date mergeDate, String targetBranch, String mergeSha, String comment) {
+    public PullRequest(int number, String author, Date createdAt, Date mergedAt, String targetBranch, String mergeSha, String comment) {
         this.number = number;
         this.author = author;
-        this.mergeDate = mergeDate;
+        this.createdAt = createdAt;
+        this.mergedAt = mergedAt;
         this.targetBranch = targetBranch;
         this.mergeSha = mergeSha;
         this.comment = comment;
@@ -28,8 +30,12 @@ public class PullRequest {
         return author;
     }
 
-    public Date getMergeDate() {
-        return mergeDate;
+    public Date getCreatedAt() {
+        return createdAt;
+    }
+
+    public Date getMergedAt() {
+        return mergedAt;
     }
 
     public String getTargetBranch() {
@@ -45,7 +51,11 @@ public class PullRequest {
     }
 
     public double getLeadTimeHours() {
-        return leadTimeHours;
+        if (createdAt == null || mergedAt == null) {
+            return 0.0;
+        }
+        long diffInMillis = mergedAt.getTime() - createdAt.getTime();
+        return diffInMillis / (1000.0 * 60 * 60); // Convert milliseconds to hours
     }
 
     public void setLeadTimeHours(double leadTimeHours) {

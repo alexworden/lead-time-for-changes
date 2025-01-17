@@ -10,10 +10,12 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 
 public class CLI {
     private static final Logger logger = LoggerFactory.getLogger(CLI.class);
     private static final String DEFAULT_CACHE_DIR = System.getProperty("user.home") + "/.leadtime/repos";
+    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z");
 
     public static void main(String[] args) {
         Options options = new Options();
@@ -102,7 +104,10 @@ public class CLI {
                     token != null ? "present" : "missing");
             }
 
-            analyzer.analyzeRelease(cmd.getOptionValue("end-tag"), cmd.getOptionValue("start-tag"));
+            ReleaseAnalysis analysis = analyzer.analyzeRelease(cmd.getOptionValue("end-tag"), cmd.getOptionValue("start-tag"));
+            
+            printAnalysisResults(analysis);
+
         } catch (ParseException e) {
             System.err.println("Error: " + e.getMessage());
             formatter.printHelp("lead-time-analyzer", options);
@@ -111,6 +116,36 @@ public class CLI {
             System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
+        }
+    }
+
+    private static void printAnalysisResults(ReleaseAnalysis analysis) {
+        System.out.println("\nAnalysis Results:");
+        System.out.println("=================");
+        System.out.printf("Release Tag: %s%n", analysis.getReleaseTag());
+        System.out.printf("Release Commit: %s%n", analysis.getReleaseCommit());
+        System.out.printf("Release Date: %s%n", DATE_FORMAT.format(analysis.getReleaseDate()));
+        System.out.println();
+
+        System.out.printf("Number of Pull Requests: %d%n", analysis.getPullRequests().size());
+
+        if (!analysis.getPullRequests().isEmpty()) {
+            System.out.printf("%nLead Time Statistics (hours):%n");
+            System.out.printf("  Average: %.2f%n", analysis.getAverageLeadTimeHours());
+            System.out.printf("  Median: %.2f%n", analysis.getMedianLeadTimeHours());
+            System.out.printf("  90th Percentile: %.2f%n", analysis.getP90LeadTimeHours());
+
+            System.out.println("\nPull Request Details:");
+            System.out.println("=====================");
+            for (PullRequest pr : analysis.getPullRequests()) {
+                System.out.printf("PR #%d by %s%n", pr.getNumber(), pr.getAuthor());
+                System.out.printf("  Merged at: %s%n", DATE_FORMAT.format(pr.getMergedAt()));
+                System.out.printf("  Lead Time: %.2f hours%n", pr.getLeadTimeHours());
+                System.out.printf("  Target Branch: %s%n", pr.getTargetBranch());
+                System.out.printf("  Commit: %s%n", pr.getMergeSha());
+                System.out.printf("  Comment: %s%n", pr.getComment().split("\n")[0]);
+                System.out.println();
+            }
         }
     }
 

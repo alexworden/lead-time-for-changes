@@ -15,6 +15,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class LeadTimeAnalyzer {
     private static final Logger logger = LoggerFactory.getLogger(LeadTimeAnalyzer.class);
@@ -37,7 +38,7 @@ public class LeadTimeAnalyzer {
         this.githubClient = client;
     }
 
-    public void analyzeRelease(String releaseRef, String previousReleaseRef) throws Exception {
+    public ReleaseAnalysis analyzeRelease(String releaseRef, String previousReleaseRef) throws Exception {
         // Only fetch tags if we have a remote repository and can authenticate
         try {
             logger.info("Fetching tags...");
@@ -92,10 +93,12 @@ public class LeadTimeAnalyzer {
                         prNumber = Integer.parseInt(squashMatcher.group(1));
                     }
 
+                    Date commitDate = commit.getAuthorIdent().getWhen();
                     PullRequest pr = new PullRequest(
                             prNumber,
                             commit.getAuthorIdent().getName(),
-                            commit.getAuthorIdent().getWhen(),
+                            commitDate,
+                            commitDate,
                             targetBranch,
                             commit.getName(),
                             message
@@ -106,7 +109,7 @@ public class LeadTimeAnalyzer {
         }
 
         // Sort PRs by merge date
-        pullRequests.sort(Comparator.comparing(PullRequest::getMergeDate));
+        pullRequests.sort(Comparator.comparing(PullRequest::getMergedAt));
 
         // Get release date
         Date releaseDate;
@@ -115,61 +118,48 @@ public class LeadTimeAnalyzer {
             releaseDate = commit.getCommitterIdent().getWhen();
         }
 
-        // Print analysis
-        System.out.println("\nAnalysis Results:");
-        System.out.println("=================");
-        System.out.printf("Release Tag: %s%n", releaseRef);
-        System.out.printf("Release Commit: %s%n", releaseCommit.getName());
-        System.out.printf("Release Date: %s%n", DATE_FORMAT.format(releaseDate));
-        System.out.println();
-
         // Calculate lead times
-        for (PullRequest pr : pullRequests) {
-            long diffInMillis = releaseDate.getTime() - pr.getMergeDate().getTime();
-            double leadTimeHours = diffInMillis / (1000.0 * 60 * 60); // Convert milliseconds to hours
-            pr.setLeadTimeHours(leadTimeHours);
-        }
+        double[] leadTimes = pullRequests.stream()
+            .mapToDouble(pr -> {
+                long diffInMillis = releaseDate.getTime() - pr.getMergedAt().getTime();
+                return diffInMillis / (1000.0 * 60 * 60); // Convert milliseconds to hours
+            })
+            .toArray();
 
-        System.out.println("Number of Pull Requests: " + pullRequests.size());
-        
-        if (!pullRequests.isEmpty()) {
-            // Calculate statistics
-            DoubleSummaryStatistics leadTimeStats = pullRequests.stream()
-                    .mapToDouble(PullRequest::getLeadTimeHours)
-                    .summaryStatistics();
+        double averageLeadTime = calculateAverage(leadTimes);
+        double medianLeadTime = calculateMedian(leadTimes);
+        double p90LeadTime = calculatePercentile(leadTimes, 90);
 
-            System.out.printf("Lead Time Statistics (hours):%n");
-            System.out.printf("  Average: %.2f%n", leadTimeStats.getAverage());
-            System.out.printf("  Min: %.2f%n", leadTimeStats.getMin());
-            System.out.printf("  Max: %.2f%n", leadTimeStats.getMax());
-            System.out.printf("  Median: %.2f%n", calculateMedian(pullRequests.stream()
-                    .mapToDouble(PullRequest::getLeadTimeHours)
-                    .sorted()
-                    .toArray()));
+        return new ReleaseAnalysis(
+            releaseRef,
+            releaseCommit.getName(),
+            releaseDate,
+            pullRequests,
+            averageLeadTime,
+            medianLeadTime,
+            p90LeadTime
+        );
+    }
 
-            // Print individual PR details
-            System.out.println("\nPull Request Details:");
-            System.out.println("=====================");
-            for (PullRequest pr : pullRequests) {
-                System.out.printf("PR #%d by %s%n", pr.getNumber(), pr.getAuthor());
-                System.out.printf("  Merged at: %s%n", DATE_FORMAT.format(pr.getMergeDate()));
-                System.out.printf("  Lead Time: %.2f hours%n", pr.getLeadTimeHours());
-                System.out.printf("  Target Branch: %s%n", pr.getTargetBranch());
-                System.out.printf("  Commit: %s%n", pr.getMergeSha());
-                System.out.printf("  Comment: %s%n", pr.getComment());
-                System.out.println();
-            }
-        }
+    private double calculateAverage(double[] values) {
+        if (values.length == 0) return 0.0;
+        return Arrays.stream(values).average().orElse(0.0);
     }
 
     private double calculateMedian(double[] values) {
-        if (values.length == 0) return 0;
-        
-        int middle = values.length / 2;
-        if (values.length % 2 == 1) {
-            return values[middle];
+        if (values.length == 0) return 0.0;
+        Arrays.sort(values);
+        if (values.length % 2 == 0) {
+            return (values[values.length / 2 - 1] + values[values.length / 2]) / 2.0;
         } else {
-            return (values[middle-1] + values[middle]) / 2.0;
+            return values[values.length / 2];
         }
+    }
+
+    private double calculatePercentile(double[] values, int percentile) {
+        if (values.length == 0) return 0.0;
+        Arrays.sort(values);
+        int index = (int) Math.ceil(percentile / 100.0 * values.length) - 1;
+        return values[Math.max(0, Math.min(values.length - 1, index))];
     }
 }
