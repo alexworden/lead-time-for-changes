@@ -108,32 +108,7 @@ public class CLI {
             // Initialize the analyzer
             LeadTimeAnalyzer analyzer = new LeadTimeAnalyzer(repoDir);
             
-            // Set up GitHub client if we have a URL and token
-            if (token != null && (githubUrl != null || isGitHubRepo(repoDir))) {
-                String url = githubUrl;
-                if (url == null) {
-                    // Try to get GitHub URL from git config
-                    try {
-                        Git git = Git.open(repoDir);
-                        url = git.getRepository().getConfig().getString("remote", "origin", "url");
-                        git.close();
-                    } catch (Exception e) {
-                        logger.warn("Failed to get GitHub URL from git config: {}", e.getMessage());
-                    }
-                }
-                
-                if (url != null) {
-                    try {
-                        logger.info("Initializing GitHub client with URL: {} and token: {}", url, token != null ? "present" : "missing");
-                        GitHubClient githubClient = new GitHubClient(token, url, repoDir);
-                        analyzer.setGitHubClient(githubClient);
-                        logger.info("GitHub client initialized successfully");
-                    } catch (IOException e) {
-                        logger.error("Failed to initialize GitHub client", e);
-                        System.err.println("Warning: Failed to initialize GitHub client. Falling back to git log analysis: " + e.getMessage());
-                    }
-                }
-            }
+            setupGithubClient(githubUrl, token, repoDir, analyzer);
 
             // Analyze the release
             ReleaseAnalysis analysis = analyzer.analyzeRelease(endTag, startTag);
@@ -147,6 +122,35 @@ public class CLI {
             System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
+        }
+    }
+
+    private static void setupGithubClient(String githubUrl, String token, File repoDir, LeadTimeAnalyzer analyzer) {
+        // Set up GitHub client if we have a URL and token
+        if (token != null && (githubUrl != null || isGitHubRepo(repoDir))) {
+            String url = githubUrl;
+            if (url == null) {
+                // Try to get GitHub URL from git config
+                try {
+                    Git git = Git.open(repoDir);
+                    url = git.getRepository().getConfig().getString("remote", "origin", "url");
+                    git.close();
+                } catch (Exception e) {
+                    logger.warn("Failed to get GitHub URL from git config: {}", e.getMessage());
+                }
+            }
+            
+            if (url != null) {
+                try {
+                    logger.info("Initializing GitHub client with URL: {} and token: {}", url, token != null ? "present" : "missing");
+                    GitHubClient githubClient = new GitHubClient(token, url, repoDir);
+                    analyzer.setGitHubClient(githubClient);
+                    logger.info("GitHub client initialized successfully");
+                } catch (IOException e) {
+                    logger.error("Failed to initialize GitHub client", e);
+                    System.err.println("Warning: Failed to initialize GitHub client. Falling back to git log analysis: " + e.getMessage());
+                }
+            }
         }
     }
 
