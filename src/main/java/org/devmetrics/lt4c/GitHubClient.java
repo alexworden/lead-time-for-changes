@@ -22,14 +22,20 @@ public class GitHubClient {
     private final Git git;
 
     public GitHubClient(String token, String repoUrl, File repoDir) throws IOException {
-        github = new GitHubBuilder().withOAuthToken(token).build();
-        
-        // Parse the repository owner and name from the URL
+        // Parse the GitHub host from the URL
+        String githubHost;
         String repoPath;
-        if (repoUrl.startsWith("https://github.com/")) {
-            repoPath = repoUrl.substring("https://github.com/".length());
-        } else if (repoUrl.startsWith("git@github.com:")) {
-            repoPath = repoUrl.substring("git@github.com:".length());
+        
+        if (repoUrl.startsWith("https://")) {
+            // Handle HTTPS URLs
+            String[] parts = repoUrl.substring(8).split("/", 2);
+            githubHost = parts[0];
+            repoPath = parts[1];
+        } else if (repoUrl.startsWith("git@")) {
+            // Handle SSH URLs
+            String[] parts = repoUrl.substring(4).split(":", 2);
+            githubHost = parts[0];
+            repoPath = parts[1];
         } else {
             throw new IllegalArgumentException("Invalid GitHub URL format: " + repoUrl);
         }
@@ -39,7 +45,19 @@ public class GitHubClient {
             repoPath = repoPath.substring(0, repoPath.length() - 4);
         }
         
-        logger.info("Connecting to GitHub repository: {}", repoPath);
+        logger.info("Connecting to GitHub repository at {}: {}", githubHost, repoPath);
+        
+        // Configure GitHub client based on host
+        if (githubHost.equals("github.com")) {
+            github = new GitHubBuilder().withOAuthToken(token).build();
+        } else {
+            // Enterprise GitHub instance
+            github = new GitHubBuilder()
+                .withEndpoint("https://" + githubHost + "/api/v3")
+                .withOAuthToken(token)
+                .build();
+        }
+        
         repository = github.getRepository(repoPath);
         logger.info("Successfully connected to repository");
         
