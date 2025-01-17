@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class GitHubClient {
     private static final Logger logger = LoggerFactory.getLogger(GitHubClient.class);
@@ -152,7 +154,9 @@ public class GitHubClient {
     private String extractPRNumber(String message) {
         // Common PR reference patterns
         String[] patterns = {
-            "(?i)Closes gh-(\\d+)",
+            "\\(#(\\d+)\\)",                   // (#1234)
+            "Merge pull request #(\\d+)",      // Merge pull request #1234
+            "(?i)Closes gh-(\\d+)",            // Keep existing patterns as fallback
             "(?i)Fixes gh-(\\d+)",
             "(?i)Resolves gh-(\\d+)",
             "(?i)Close gh-(\\d+)",
@@ -163,11 +167,11 @@ public class GitHubClient {
         };
         
         for (String pattern : patterns) {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-            java.util.regex.Matcher m = p.matcher(message);
+            Pattern p = Pattern.compile(pattern);
+            Matcher m = p.matcher(message);
             if (m.find()) {
                 String prNumber = m.group(1);
-                logger.trace("Found PR number {} using pattern: {}", prNumber, pattern);
+                logger.debug("Found PR number {} using pattern: {}", prNumber, pattern);
                 return prNumber;
             }
         }
