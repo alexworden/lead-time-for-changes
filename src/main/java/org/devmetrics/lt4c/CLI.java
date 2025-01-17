@@ -126,19 +126,9 @@ public class CLI {
     }
 
     private static void setupGithubClient(String githubUrl, String token, File repoDir, LeadTimeAnalyzer analyzer) {
-        // Set up GitHub client if we have a URL and token
-        if (token != null && (githubUrl != null || isGitHubRepo(repoDir))) {
-            String url = githubUrl;
-            if (url == null) {
-                // Try to get GitHub URL from git config
-                try {
-                    Git git = Git.open(repoDir);
-                    url = git.getRepository().getConfig().getString("remote", "origin", "url");
-                    git.close();
-                } catch (Exception e) {
-                    logger.warn("Failed to get GitHub URL from git config: {}", e.getMessage());
-                }
-            }
+        // Set up GitHub client if we have a token
+        if (token != null) {
+            String url = githubUrl != null ? githubUrl : getGitHubUrl(repoDir);
             
             if (url != null) {
                 try {
@@ -159,9 +149,21 @@ public class CLI {
             Git git = Git.open(repoDir);
             String url = git.getRepository().getConfig().getString("remote", "origin", "url");
             git.close();
-            return url != null && url.contains("github.com");
+            return url != null && (url.contains("github.com") || url.contains("github."));
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    private static String getGitHubUrl(File repoDir) {
+        try {
+            Git git = Git.open(repoDir);
+            String url = git.getRepository().getConfig().getString("remote", "origin", "url");
+            git.close();
+            return url;
+        } catch (Exception e) {
+            logger.warn("Failed to get GitHub URL from git config: {}", e.getMessage());
+            return null;
         }
     }
 
