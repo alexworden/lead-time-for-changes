@@ -2,9 +2,8 @@ package org.devmetrics.lt4c;
 
 import org.apache.commons.cli.*;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
-import org.kohsuke.github.GitHub;
-import org.kohsuke.github.GitHubBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,46 +70,78 @@ public class CLI {
             String directory = cmd.getOptionValue("directory");
             String githubUrl = cmd.getOptionValue("github-url");
             String token = cmd.getOptionValue("token", System.getenv("LT4C_GIT_TOKEN"));
+            String startTag = cmd.getOptionValue("start-tag");
+            String endTag = cmd.getOptionValue("end-tag");
 
             File repoDir;
             if (githubUrl != null) {
                 repoDir = getOrCreateGitRepo(githubUrl, token);
-            } else {
+            } else if (directory != null) {
                 repoDir = new File(directory);
                 try {
                     // Try to open the Git repository to validate it
-                    Git.open(repoDir);
+                    Git git = Git.open(repoDir);
+                    
+                    // Try to fetch tags if we have a token
+                    if (token != null) {
+                        logger.info("Attempting to fetch tags for local repository: {}", repoDir);
+                        try {
+                            git.fetch()
+                                .setRefSpecs("+refs/tags/*:refs/tags/*")
+                                .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
+                                .call();
+                            logger.info("Tags fetched successfully");
+                        } catch (GitAPIException e) {
+                            logger.warn("Failed to fetch tags: {}. Will use local tags only.", e.getMessage());
+                        }
+                    } else {
+                        logger.info("No GitHub token provided, will use local tags only");
+                    }
+                    git.close();
                 } catch (Exception e) {
                     throw new ParseException("Invalid Git repository directory: " + directory + " - " + e.getMessage());
                 }
+            } else {
+                throw new ParseException("Either --directory or --github-url must be specified");
             }
 
+            // Initialize the analyzer
             LeadTimeAnalyzer analyzer = new LeadTimeAnalyzer(repoDir);
             
-            // If we have a GitHub URL and token, set up the GitHub client
-            if (githubUrl != null && token != null) {
-                try {
-                    logger.info("Initializing GitHub client with URL: {} and token: {}", githubUrl, token != null ? "present" : "missing");
-                    GitHubClient githubClient = new GitHubClient(token, githubUrl, repoDir);
-                    analyzer.setGitHubClient(githubClient);
-                    logger.info("GitHub client initialized successfully");
-                } catch (IOException e) {
-                    logger.error("Failed to initialize GitHub client", e);
-                    System.err.println("Warning: Failed to initialize GitHub client. Falling back to git log analysis: " + e.getMessage());
+            // Set up GitHub client if we have a URL and token
+            if (token != null && (githubUrl != null || isGitHubRepo(repoDir))) {
+                String url = githubUrl;
+                if (url == null) {
+                    // Try to get GitHub URL from git config
+                    try {
+                        Git git = Git.open(repoDir);
+                        url = git.getRepository().getConfig().getString("remote", "origin", "url");
+                        git.close();
+                    } catch (Exception e) {
+                        logger.warn("Failed to get GitHub URL from git config: {}", e.getMessage());
+                    }
                 }
-            } else {
-                logger.info("Skipping GitHub client initialization. URL: {}, Token: {}", 
-                    githubUrl != null ? githubUrl : "missing",
-                    token != null ? "present" : "missing");
+                
+                if (url != null) {
+                    try {
+                        logger.info("Initializing GitHub client with URL: {} and token: {}", url, token != null ? "present" : "missing");
+                        GitHubClient githubClient = new GitHubClient(token, url, repoDir);
+                        analyzer.setGitHubClient(githubClient);
+                        logger.info("GitHub client initialized successfully");
+                    } catch (IOException e) {
+                        logger.error("Failed to initialize GitHub client", e);
+                        System.err.println("Warning: Failed to initialize GitHub client. Falling back to git log analysis: " + e.getMessage());
+                    }
+                }
             }
 
-            ReleaseAnalysis analysis = analyzer.analyzeRelease(cmd.getOptionValue("end-tag"), cmd.getOptionValue("start-tag"));
-            
+            // Analyze the release
+            ReleaseAnalysis analysis = analyzer.analyzeRelease(endTag, startTag);
             printAnalysisResults(analysis);
 
         } catch (ParseException e) {
             System.err.println("Error: " + e.getMessage());
-            formatter.printHelp("lead-time-analyzer", options);
+            formatter.printHelp("leadtime", options);
             System.exit(1);
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
@@ -119,24 +150,60 @@ public class CLI {
         }
     }
 
+    private static boolean isGitHubRepo(File repoDir) {
+        try {
+            Git git = Git.open(repoDir);
+            String url = git.getRepository().getConfig().getString("remote", "origin", "url");
+            git.close();
+            return url != null && url.contains("github.com");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static File getOrCreateGitRepo(String githubUrl, String token) throws IOException, GitAPIException {
+        File cacheDir = new File(DEFAULT_CACHE_DIR);
+        String repoName = githubUrl.replaceAll(".*github\\.com[:/]", "").replaceAll("\\.git$", "").replace('/', '-');
+        File repoDir = new File(cacheDir, repoName);
+
+        if (!repoDir.exists()) {
+            logger.info("Cloning repository {} to {}", githubUrl, repoDir);
+            cacheDir.mkdirs();
+            Git.cloneRepository()
+                    .setURI(githubUrl)
+                    .setDirectory(repoDir)
+                    .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
+                    .call()
+                    .close();
+        } else {
+            logger.info("Using existing repository at {}", repoDir);
+            Git git = Git.open(repoDir);
+            try {
+                logger.info("Fetching latest changes...");
+                git.fetch()
+                        .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
+                        .call();
+            } catch (GitAPIException e) {
+                logger.warn("Failed to fetch latest changes: {}", e.getMessage());
+            }
+            git.close();
+        }
+
+        return repoDir;
+    }
+
     private static void printAnalysisResults(ReleaseAnalysis analysis) {
-        System.out.println("\nAnalysis Results:");
-        System.out.println("=================");
-        System.out.printf("Release Tag: %s%n", analysis.getReleaseTag());
-        System.out.printf("Release Commit: %s%n", analysis.getReleaseCommit());
+        System.out.printf("Release Analysis for %s (commit: %s)%n", 
+            analysis.getReleaseTag(), 
+            analysis.getReleaseCommit());
         System.out.printf("Release Date: %s%n", DATE_FORMAT.format(analysis.getReleaseDate()));
-        System.out.println();
-
         System.out.printf("Number of Pull Requests: %d%n", analysis.getPullRequests().size());
-
+        System.out.printf("Average Lead Time: %.2f hours%n", analysis.getAverageLeadTimeHours());
+        System.out.printf("Median Lead Time: %.2f hours%n", analysis.getMedianLeadTimeHours());
+        System.out.printf("90th Percentile Lead Time: %.2f hours%n", analysis.getP90LeadTimeHours());
+        System.out.println("\nPull Requests:");
+        
         if (!analysis.getPullRequests().isEmpty()) {
-            System.out.printf("%nLead Time Statistics (hours):%n");
-            System.out.printf("  Average: %.2f%n", analysis.getAverageLeadTimeHours());
-            System.out.printf("  Median: %.2f%n", analysis.getMedianLeadTimeHours());
-            System.out.printf("  90th Percentile: %.2f%n", analysis.getP90LeadTimeHours());
-
-            System.out.println("\nPull Request Details:");
-            System.out.println("=====================");
             for (PullRequest pr : analysis.getPullRequests()) {
                 System.out.printf("PR #%d by %s%n", pr.getNumber(), pr.getAuthor());
                 System.out.printf("  Merged at: %s%n", DATE_FORMAT.format(pr.getMergedAt()));
@@ -146,41 +213,6 @@ public class CLI {
                 System.out.printf("  Comment: %s%n", pr.getComment().split("\n")[0]);
                 System.out.println();
             }
-        }
-    }
-
-    private static File getOrCreateGitRepo(String repoUrl, String token) throws Exception {
-        try {
-            // Create base directory for cached repositories
-            File baseDir = new File(DEFAULT_CACHE_DIR);
-            if (!baseDir.exists()) {
-                baseDir.mkdirs();
-            }
-
-            // Convert URL to directory name
-            String repoName = repoUrl.substring(repoUrl.lastIndexOf('/') + 1).replace(".git", "");
-            File repoDir = new File(baseDir, repoName);
-
-            if (!repoDir.exists()) {
-                // Clone the repository if it doesn't exist
-                logger.info("Cloning repository from {}...", repoUrl);
-                Git.cloneRepository()
-                    .setURI(repoUrl)
-                    .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
-                    .setDirectory(repoDir)
-                    .call();
-                logger.info("Repository cloned successfully");
-            } else {
-                // Update existing repository
-                logger.info("Updating existing repository clone...");
-                Git git = Git.open(repoDir);
-                git.fetch().setRemote("origin").setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, "")).call();
-                logger.info("Repository updated successfully");
-            }
-
-            return repoDir;
-        } catch (Exception e) {
-            throw new Exception("Failed to prepare git repository: " + e.getMessage(), e);
         }
     }
 }
