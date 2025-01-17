@@ -55,35 +55,31 @@ public class LeadTimeAnalyzer {
                 .addRange(previousReleaseCommit, releaseCommit);
 
         List<PullRequest> pullRequests = new ArrayList<>();
-        Map<String, RevCommit> prCommits = new HashMap<>();
 
-        try (RevWalk revWalk = new RevWalk(repository)) {
-            for (RevCommit commit : logCommand.call()) {
-                String message = commit.getFullMessage().trim();
-                Matcher mergeMatcher = PR_MERGE_PATTERN.matcher(message);
-                Matcher squashMatcher = PR_SQUASH_PATTERN.matcher(message);
+        for (RevCommit commit : logCommand.call()) {
+            String message = commit.getFullMessage().trim();
+            Matcher mergeMatcher = PR_MERGE_PATTERN.matcher(message);
+            Matcher squashMatcher = PR_SQUASH_PATTERN.matcher(message);
 
-                if (mergeMatcher.find() || squashMatcher.find()) {
-                    int prNumber;
-                    String targetBranch = "";
-                    if (mergeMatcher.find(0)) {
-                        prNumber = Integer.parseInt(mergeMatcher.group(1));
-                        targetBranch = mergeMatcher.group(2);
-                    } else {
-                        prNumber = Integer.parseInt(squashMatcher.group(1));
-                    }
-
-                    PullRequest pr = new PullRequest(
-                            prNumber,
-                            commit.getAuthorIdent().getName(),
-                            commit.getAuthorIdent().getWhen(),
-                            targetBranch,
-                            commit.getName(),
-                            message
-                    );
-                    pullRequests.add(pr);
-                    prCommits.put(commit.getName(), commit);
+            if (mergeMatcher.find() || squashMatcher.find()) {
+                int prNumber;
+                String targetBranch = "";
+                if (mergeMatcher.find(0)) {
+                    prNumber = Integer.parseInt(mergeMatcher.group(1));
+                    targetBranch = mergeMatcher.group(2);
+                } else {
+                    prNumber = Integer.parseInt(squashMatcher.group(1));
                 }
+
+                PullRequest pr = new PullRequest(
+                        prNumber,
+                        commit.getAuthorIdent().getName(),
+                        commit.getAuthorIdent().getWhen(),
+                        targetBranch,
+                        commit.getName(),
+                        message
+                );
+                pullRequests.add(pr);
             }
         }
 
