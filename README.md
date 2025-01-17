@@ -73,23 +73,6 @@ You can also enable debug logging by setting the environment variable:
 export LOGBACK_LEVEL=DEBUG
 ```
 
-## Authentication
-
-For private repositories, you'll need to provide a Git access token. You can do this in two ways:
-
-1. Via environment variable:
-   ```bash
-   export LT4C_GIT_TOKEN=your_token_here
-   java -jar lead-time-analyzer.jar --github-url https://github.com/org/repo ...
-   ```
-
-2. Via command line argument:
-   ```bash
-   java -jar lead-time-analyzer.jar --github-url https://github.com/org/repo --token your_token_here ...
-   ```
-
-The token should have read access to the repository you want to analyze. For GitHub, you can create a Personal Access Token (PAT) in your account settings.
-
 ## Build
 
 To build the project:
