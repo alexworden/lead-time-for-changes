@@ -2,10 +2,14 @@ package org.devmetrics.lt4c;
 
 import org.apache.commons.cli.*;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.kohsuke.github.GitHub;
+import org.kohsuke.github.GitHubBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
 
 public class CLI {
     private static final Logger logger = LoggerFactory.getLogger(CLI.class);
@@ -13,34 +17,48 @@ public class CLI {
 
     public static void main(String[] args) {
         Options options = new Options();
-        options.addOption(Option.builder("D")
-                .longOpt("directory")
-                .hasArg()
-                .desc("Local Git repository directory")
-                .build());
-        options.addOption(Option.builder("g")
-                .longOpt("github-url")
-                .hasArg()
-                .desc("GitHub repository URL")
-                .build());
-        options.addOption(Option.builder("s")
-                .longOpt("start-release")
-                .hasArg()
-                .desc("Start release tag")
-                .build());
-        options.addOption(Option.builder("e")
-                .longOpt("end-release")
-                .hasArg()
-                .desc("End release tag")
-                .build());
+
         options.addOption(Option.builder("d")
-                .longOpt("debug")
-                .desc("Enable debug logging")
+                .longOpt("directory")
+                .desc("Git repository directory")
+                .hasArg()
                 .build());
+
+        options.addOption(Option.builder("u")
+                .longOpt("github-url")
+                .desc("GitHub repository URL")
+                .hasArg()
+                .build());
+
+        options.addOption(Option.builder("t")
+                .longOpt("token")
+                .desc("GitHub token (or set LT4C_GIT_TOKEN env var)")
+                .hasArg()
+                .build());
+
+        options.addOption(Option.builder("s")
+                .longOpt("start-tag")
+                .desc("Start tag")
+                .hasArg()
+                .required()
+                .build());
+
+        options.addOption(Option.builder("e")
+                .longOpt("end-tag")
+                .desc("End tag")
+                .hasArg()
+                .required()
+                .build());
+
         options.addOption(Option.builder("l")
                 .longOpt("limit")
-                .hasArg()
                 .desc("Limit number of releases to analyze")
+                .hasArg()
+                .build());
+
+        options.addOption(Option.builder("g")
+                .longOpt("debug")
+                .desc("Enable debug logging")
                 .build());
 
         CommandLineParser parser = new DefaultParser();
@@ -50,20 +68,11 @@ public class CLI {
             CommandLine cmd = parser.parse(options, args);
             String directory = cmd.getOptionValue("directory");
             String githubUrl = cmd.getOptionValue("github-url");
-            String startRelease = cmd.getOptionValue("start-release");
-            String endRelease = cmd.getOptionValue("end-release");
-
-            if (directory == null && githubUrl == null) {
-                throw new ParseException("Either --directory or --github-url must be specified");
-            }
-
-            if (directory != null && githubUrl != null) {
-                throw new ParseException("Cannot specify both --directory and --github-url");
-            }
+            String token = cmd.getOptionValue("token", System.getenv("LT4C_GIT_TOKEN"));
 
             File repoDir;
             if (githubUrl != null) {
-                repoDir = getOrCreateGitRepo(githubUrl);
+                repoDir = getOrCreateGitRepo(githubUrl, token);
             } else {
                 repoDir = new File(directory);
                 try {
@@ -75,8 +84,25 @@ public class CLI {
             }
 
             LeadTimeAnalyzer analyzer = new LeadTimeAnalyzer(repoDir);
-            analyzer.analyzeRelease(endRelease, startRelease);
+            
+            // If we have a GitHub URL and token, set up the GitHub client
+            if (githubUrl != null && token != null) {
+                try {
+                    logger.info("Initializing GitHub client with URL: {} and token: {}", githubUrl, token != null ? "present" : "missing");
+                    GitHubClient githubClient = new GitHubClient(token, githubUrl, repoDir);
+                    analyzer.setGitHubClient(githubClient);
+                    logger.info("GitHub client initialized successfully");
+                } catch (IOException e) {
+                    logger.error("Failed to initialize GitHub client", e);
+                    System.err.println("Warning: Failed to initialize GitHub client. Falling back to git log analysis: " + e.getMessage());
+                }
+            } else {
+                logger.info("Skipping GitHub client initialization. URL: {}, Token: {}", 
+                    githubUrl != null ? githubUrl : "missing",
+                    token != null ? "present" : "missing");
+            }
 
+            analyzer.analyzeRelease(cmd.getOptionValue("end-tag"), cmd.getOptionValue("start-tag"));
         } catch (ParseException e) {
             System.err.println("Error: " + e.getMessage());
             formatter.printHelp("lead-time-analyzer", options);
@@ -88,7 +114,7 @@ public class CLI {
         }
     }
 
-    private static File getOrCreateGitRepo(String repoUrl) throws Exception {
+    private static File getOrCreateGitRepo(String repoUrl, String token) throws Exception {
         try {
             // Create base directory for cached repositories
             File baseDir = new File(DEFAULT_CACHE_DIR);
@@ -105,6 +131,7 @@ public class CLI {
                 logger.info("Cloning repository from {}...", repoUrl);
                 Git.cloneRepository()
                     .setURI(repoUrl)
+                    .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
                     .setDirectory(repoDir)
                     .call();
                 logger.info("Repository cloned successfully");
@@ -112,7 +139,7 @@ public class CLI {
                 // Update existing repository
                 logger.info("Updating existing repository clone...");
                 Git git = Git.open(repoDir);
-                git.fetch().setRemote("origin").call();
+                git.fetch().setRemote("origin").setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, "")).call();
                 logger.info("Repository updated successfully");
             }
 

@@ -24,12 +24,17 @@ public class LeadTimeAnalyzer {
 
     private final Repository repository;
     private final Git git;
+    private GitHubClient githubClient;
 
     public LeadTimeAnalyzer(File repoDir) throws Exception {
         repository = new FileRepositoryBuilder()
                 .setGitDir(new File(repoDir, ".git"))
                 .build();
         git = new Git(repository);
+    }
+
+    public void setGitHubClient(GitHubClient client) {
+        this.githubClient = client;
     }
 
     public void analyzeRelease(String releaseRef, String previousReleaseRef) throws Exception {
@@ -56,36 +61,47 @@ public class LeadTimeAnalyzer {
             throw new IllegalArgumentException("Could not resolve release references");
         }
 
-        // Get all commits between releases
-        LogCommand logCommand = git.log()
-                .addRange(previousReleaseCommit, releaseCommit);
+        logger.info("Successfully resolved commits - Release: {}, Previous: {}", 
+            releaseCommit.getName(), previousReleaseCommit.getName());
 
-        List<PullRequest> pullRequests = new ArrayList<>();
+        List<PullRequest> pullRequests;
+        if (githubClient != null) {
+            // Use GitHub API to get PRs
+            logger.info("Using GitHub API to find pull requests");
+            pullRequests = githubClient.getPullRequestsBetweenTags(previousReleaseRef, releaseRef);
+            logger.info("GitHub API returned {} pull requests", pullRequests.size());
+        } else {
+            // Fallback to git log analysis
+            logger.info("No GitHub client available, falling back to git log analysis");
+            pullRequests = new ArrayList<>();
+            LogCommand logCommand = git.log()
+                    .addRange(previousReleaseCommit, releaseCommit);
 
-        for (RevCommit commit : logCommand.call()) {
-            String message = commit.getFullMessage().trim();
-            Matcher mergeMatcher = PR_MERGE_PATTERN.matcher(message);
-            Matcher squashMatcher = PR_SQUASH_PATTERN.matcher(message);
+            for (RevCommit commit : logCommand.call()) {
+                String message = commit.getFullMessage().trim();
+                Matcher mergeMatcher = PR_MERGE_PATTERN.matcher(message);
+                Matcher squashMatcher = PR_SQUASH_PATTERN.matcher(message);
 
-            if (mergeMatcher.find() || squashMatcher.find()) {
-                int prNumber;
-                String targetBranch = "";
-                if (mergeMatcher.find(0)) {
-                    prNumber = Integer.parseInt(mergeMatcher.group(1));
-                    targetBranch = mergeMatcher.group(2);
-                } else {
-                    prNumber = Integer.parseInt(squashMatcher.group(1));
+                if (mergeMatcher.find() || squashMatcher.find()) {
+                    int prNumber;
+                    String targetBranch = "";
+                    if (mergeMatcher.find(0)) {
+                        prNumber = Integer.parseInt(mergeMatcher.group(1));
+                        targetBranch = mergeMatcher.group(2);
+                    } else {
+                        prNumber = Integer.parseInt(squashMatcher.group(1));
+                    }
+
+                    PullRequest pr = new PullRequest(
+                            prNumber,
+                            commit.getAuthorIdent().getName(),
+                            commit.getAuthorIdent().getWhen(),
+                            targetBranch,
+                            commit.getName(),
+                            message
+                    );
+                    pullRequests.add(pr);
                 }
-
-                PullRequest pr = new PullRequest(
-                        prNumber,
-                        commit.getAuthorIdent().getName(),
-                        commit.getAuthorIdent().getWhen(),
-                        targetBranch,
-                        commit.getName(),
-                        message
-                );
-                pullRequests.add(pr);
             }
         }
 
