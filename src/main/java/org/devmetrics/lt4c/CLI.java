@@ -66,8 +66,11 @@ public class CLI {
                 repoDir = getOrCreateGitRepo(githubUrl);
             } else {
                 repoDir = new File(directory);
-                if (!repoDir.exists() || !new File(repoDir, ".git").exists()) {
-                    throw new ParseException("Invalid Git repository directory: " + directory);
+                try {
+                    // Try to open the Git repository to validate it
+                    Git.open(repoDir);
+                } catch (Exception e) {
+                    throw new ParseException("Invalid Git repository directory: " + directory + " - " + e.getMessage());
                 }
             }
 
