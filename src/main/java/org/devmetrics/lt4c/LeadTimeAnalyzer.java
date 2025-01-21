@@ -53,14 +53,14 @@ public class LeadTimeAnalyzer {
         ObjectId previousReleaseCommit = repository.resolve(previousReleaseRef + "^{commit}");
 
         if (releaseCommit == null || previousReleaseCommit == null) {
-            logger.error("Failed to resolve commits. Release commit: {}, Previous release commit: {}", 
-                releaseCommit != null ? releaseCommit.getName() : "null",
-                previousReleaseCommit != null ? previousReleaseCommit.getName() : "null");
-            throw new IllegalArgumentException("Could not resolve release references");
+            String errorMsg = String.format("Failed to resolve commits. Release commit: {}, Previous release commit: {}",
+              (releaseCommit != null ? releaseCommit.getName() : "null"),
+              (previousReleaseCommit != null ? previousReleaseCommit.getName() : "null"));
+            throw new IllegalStateException("Could not resolve release references");
         }
 
-        logger.info("Successfully resolved commits - Release: {}, Previous: {}", 
-            releaseCommit.getName(), previousReleaseCommit.getName());
+        logger.info("Successfully resolved commits between Previous {} and Release: {}",
+            previousReleaseCommit.getName(), releaseCommit.getName());
 
         List<PullRequest> pullRequests;
         if (githubClient != null) {
@@ -116,12 +116,7 @@ public class LeadTimeAnalyzer {
         }
 
         // Calculate lead times
-        double[] leadTimes = pullRequests.stream()
-            .mapToDouble(pr -> {
-                long diffInMillis = releaseDate.getTime() - pr.getMergedAt().getTime();
-                return diffInMillis / (1000.0 * 60 * 60); // Convert milliseconds to hours
-            })
-            .toArray();
+        double[] leadTimes = pullRequests.stream().mapToDouble(PullRequest::getLeadTimeHours).toArray();
 
         double averageLeadTime = calculateAverage(leadTimes);
         double medianLeadTime = calculateMedian(leadTimes);

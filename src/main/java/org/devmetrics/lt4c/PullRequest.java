@@ -10,7 +10,6 @@ public class PullRequest {
     private final String targetBranch;
     private final String mergeSha;
     private final String comment;
-    private double leadTimeHours;
 
     public PullRequest(int number, String author, Date createdAt, Date mergedAt, String targetBranch, String mergeSha, String comment) {
         this.number = number;
@@ -56,9 +55,5 @@ public class PullRequest {
         }
         long diffInMillis = mergedAt.getTime() - createdAt.getTime();
         return diffInMillis / (1000.0 * 60 * 60); // Convert milliseconds to hours
-    }
-
-    public void setLeadTimeHours(double leadTimeHours) {
-        this.leadTimeHours = leadTimeHours;
     }
 }
