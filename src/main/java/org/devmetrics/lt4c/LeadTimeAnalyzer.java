@@ -56,7 +56,7 @@ public class LeadTimeAnalyzer {
             String errorMsg = String.format("Failed to resolve commits. Release commit: {}, Previous release commit: {}",
               (releaseCommit != null ? releaseCommit.getName() : "null"),
               (previousReleaseCommit != null ? previousReleaseCommit.getName() : "null"));
-            throw new IllegalStateException("Could not resolve release references");
+            throw new IllegalStateException(errorMsg);
         }
 
         logger.info("Successfully resolved commits between Previous {} and Release: {}",
