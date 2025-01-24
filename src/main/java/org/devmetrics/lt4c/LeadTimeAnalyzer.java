@@ -59,6 +59,12 @@ public class LeadTimeAnalyzer {
             throw new IllegalStateException(errorMsg);
         }
 
+        // Get release date from the commit
+        RevWalk walk = new RevWalk(repository);
+        RevCommit releaseCommitObj = walk.parseCommit(releaseCommit);
+        Date releaseDate = releaseCommitObj.getAuthorIdent().getWhen();
+        walk.dispose();
+
         logger.info("Successfully resolved commits between Previous {} and Release: {}",
             previousReleaseCommit.getName(), releaseCommit.getName());
 
@@ -67,6 +73,10 @@ public class LeadTimeAnalyzer {
             // Use GitHub API to get PRs
             logger.info("Using GitHub API to find pull requests");
             pullRequests = githubClient.getPullRequestsBetweenTags(previousReleaseRef, releaseRef);
+            // Set release date on each PR
+            for (PullRequest pr : pullRequests) {
+                pr.setReleaseDate(releaseDate);
+            }
             logger.info("GitHub API returned {} pull requests", pullRequests.size());
         } else {
             // Fallback to git log analysis
@@ -100,6 +110,7 @@ public class LeadTimeAnalyzer {
                             commit.getName(),
                             message
                     );
+                    pr.setReleaseDate(releaseDate);
                     pullRequests.add(pr);
                 }
             }
@@ -107,13 +118,6 @@ public class LeadTimeAnalyzer {
 
         // Sort PRs by merge date
         pullRequests.sort(Comparator.comparing(PullRequest::getMergedAt));
-
-        // Get release date
-        Date releaseDate;
-        try (RevWalk revWalk = new RevWalk(repository)) {
-            RevCommit commit = revWalk.parseCommit(releaseCommit);
-            releaseDate = commit.getCommitterIdent().getWhen();
-        }
 
         // Calculate lead times
         double[] leadTimes = pullRequests.stream().mapToDouble(PullRequest::getLeadTimeHours).toArray();

@@ -10,6 +10,7 @@ public class PullRequest {
     private final String targetBranch;
     private final String mergeSha;
     private final String comment;
+    private Date releaseDate;
 
     public PullRequest(int number, String author, Date createdAt, Date mergedAt, String targetBranch, String mergeSha, String comment) {
         this.number = number;
@@ -49,11 +50,19 @@ public class PullRequest {
         return comment;
     }
 
+    public void setReleaseDate(Date releaseDate) {
+        this.releaseDate = releaseDate;
+    }
+
+    public Date getReleaseDate() {
+        return releaseDate;
+    }
+
     public double getLeadTimeHours() {
-        if (createdAt == null || mergedAt == null) {
+        if (mergedAt == null || releaseDate == null) {
             return 0.0;
         }
-        long diffInMillis = mergedAt.getTime() - createdAt.getTime();
+        long diffInMillis = releaseDate.getTime() - mergedAt.getTime();
         return diffInMillis / (1000.0 * 60 * 60); // Convert milliseconds to hours
     }
 }
