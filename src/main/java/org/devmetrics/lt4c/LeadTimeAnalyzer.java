@@ -2,6 +2,10 @@ package org.devmetrics.lt4c;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.LogCommand;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.api.errors.NoHeadException;
+import org.eclipse.jgit.errors.IncorrectObjectTypeException;
+import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -68,52 +72,11 @@ public class LeadTimeAnalyzer {
         logger.info("Successfully resolved commits between Previous {} and Release: {}",
             previousReleaseCommit.getName(), releaseCommit.getName());
 
-        List<PullRequest> pullRequests;
-        if (githubClient != null) {
-            // Use GitHub API to get PRs
-            logger.info("Using GitHub API to find pull requests");
-            pullRequests = githubClient.getPullRequestsBetweenTags(previousReleaseRef, releaseRef);
-            // Set release date on each PR
-            for (PullRequest pr : pullRequests) {
-                pr.setReleaseDate(releaseDate);
-            }
-            logger.info("GitHub API returned {} pull requests", pullRequests.size());
-        } else {
-            // Fallback to git log analysis
-            logger.info("No GitHub client available, falling back to git log analysis");
-            pullRequests = new ArrayList<>();
-            LogCommand logCommand = git.log()
-                    .addRange(previousReleaseCommit, releaseCommit);
+        List<PullRequest> pullRequests = githubClient.getPullRequestsBetweenTags(previousReleaseRef, releaseRef);
 
-            for (RevCommit commit : logCommand.call()) {
-                String message = commit.getFullMessage().trim();
-                Matcher mergeMatcher = PR_MERGE_PATTERN.matcher(message);
-                Matcher squashMatcher = PR_SQUASH_PATTERN.matcher(message);
-
-                if (mergeMatcher.find() || squashMatcher.find()) {
-                    int prNumber;
-                    String targetBranch = "";
-                    if (mergeMatcher.find(0)) {
-                        prNumber = Integer.parseInt(mergeMatcher.group(1));
-                        targetBranch = mergeMatcher.group(2);
-                    } else {
-                        prNumber = Integer.parseInt(squashMatcher.group(1));
-                    }
-
-                    Date commitDate = commit.getAuthorIdent().getWhen();
-                    PullRequest pr = new PullRequest(
-                            prNumber,
-                            commit.getAuthorIdent().getName(),
-                            commitDate,
-                            commitDate,
-                            targetBranch,
-                            commit.getName(),
-                            message
-                    );
-                    pr.setReleaseDate(releaseDate);
-                    pullRequests.add(pr);
-                }
-            }
+        // Set release date on each PR
+        for (PullRequest pr : pullRequests) {
+            pr.setReleaseDate(releaseDate);
         }
 
         // Sort PRs by merge date

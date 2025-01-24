@@ -5,7 +5,7 @@ import java.util.Date;
 public class PullRequest {
     private final int number;
     private final String author;
-    private final Date createdAt;
+    private Date createdAt;
     private final Date mergedAt;
     private final String targetBranch;
     private final String mergeSha;
