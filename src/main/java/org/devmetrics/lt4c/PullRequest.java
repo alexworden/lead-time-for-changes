@@ -13,6 +13,9 @@ public class PullRequest {
     private final String mergeSha;
     private final String comment;
     private Date releaseDate;
+    private int linesAdded;
+    private int linesDeleted;
+    private int linesModified;
 
     public PullRequest(int number, String author, Date createdAt, Date mergedAt, String targetBranch, String mergeSha, String comment) {
         this.number = number;
@@ -22,6 +25,9 @@ public class PullRequest {
         this.targetBranch = targetBranch;
         this.mergeSha = mergeSha;
         this.comment = comment;
+        this.linesAdded = 0;
+        this.linesDeleted = 0;
+        this.linesModified = 0;
     }
 
     public int getNumber() {
@@ -58,6 +64,28 @@ public class PullRequest {
 
     public Date getReleaseDate() {
         return releaseDate;
+    }
+
+    public void setLineChanges(int added, int deleted, int modified) {
+        this.linesAdded = added;
+        this.linesDeleted = deleted;
+        this.linesModified = modified;
+    }
+
+    public int getLinesAdded() {
+        return linesAdded;
+    }
+
+    public int getLinesDeleted() {
+        return linesDeleted;
+    }
+
+    public int getLinesModified() {
+        return linesModified;
+    }
+
+    public int getTotalLinesChanged() {
+        return linesAdded + linesDeleted + linesModified;
     }
 
     public double getLeadTimeHours() {

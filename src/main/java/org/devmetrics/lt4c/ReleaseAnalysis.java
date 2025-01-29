@@ -70,6 +70,22 @@ public class ReleaseAnalysis {
         return p90LeadTimeHours;
     }
 
+    public int getTotalLinesAdded() {
+        return pullRequests.stream().mapToInt(PullRequest::getLinesAdded).sum();
+    }
+
+    public int getTotalLinesDeleted() {
+        return pullRequests.stream().mapToInt(PullRequest::getLinesDeleted).sum();
+    }
+
+    public int getTotalLinesModified() {
+        return pullRequests.stream().mapToInt(PullRequest::getLinesModified).sum();
+    }
+
+    public int getTotalLinesChanged() {
+        return pullRequests.stream().mapToInt(PullRequest::getTotalLinesChanged).sum();
+    }
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();

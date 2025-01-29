@@ -229,6 +229,8 @@ public class CLI {
             System.out.println("  Target Branch: " + pr.getTargetBranch());
             System.out.println("  Commit: " + pr.getMergeSha());
             System.out.println("  Comment: " + pr.getComment());
+            System.out.println("  Changes: +" + pr.getLinesAdded() + " -" + pr.getLinesDeleted() + 
+                             " ~" + pr.getLinesModified() + " lines");
         }
 
         System.out.println("\nSummary:");
@@ -266,5 +268,11 @@ public class CLI {
             mediumCount, (mediumCount * 100.0) / total);
         System.out.printf("  * Slow (> 72 hours): %d PRs (%.1f%%)%n", 
             slowCount, (slowCount * 100.0) / total);
+
+        System.out.println("\n- Line Change Statistics:");
+        System.out.printf("  * Added: %,d lines%n", analysis.getTotalLinesAdded());
+        System.out.printf("  * Deleted: %,d lines%n", analysis.getTotalLinesDeleted());
+        System.out.printf("  * Modified: %,d lines%n", analysis.getTotalLinesModified());
+        System.out.printf("  * Total Changes: %,d lines%n", analysis.getTotalLinesChanged());
     }
 }

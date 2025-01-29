@@ -101,15 +101,7 @@ public class GitHubClient {
                                 GHPullRequest ghPr = getPullRequestWithRetry(Integer.parseInt(prNumber));
                                 if (ghPr != null && ghPr.isMerged()) {
                                     logger.trace("Found PR #{}: {}", ghPr.getNumber(), ghPr.getTitle());
-                                    PullRequest pr = new PullRequest(
-                                            ghPr.getNumber(),
-                                            ghPr.getUser().getLogin(),
-                                            ghPr.getCreatedAt(),
-                                            ghPr.getMergedAt(),
-                                            ghPr.getBase().getRef(),
-                                            ghPr.getMergeCommitSha(),
-                                            ghPr.getTitle()
-                                    );
+                                    PullRequest pr = createPullRequest(ghPr);
                                     pullRequests.add(pr);
                                 } else {
                                     // PR not found or not accessible, create one from commit info
@@ -123,6 +115,13 @@ public class GitHubClient {
                                             commit.getName(),
                                             message
                                     );
+                                    // Get line changes from the commit
+                                    try {
+                                        GHCommit ghCommit = repository.getCommit(commit.getName());
+                                        pr.setLineChanges(ghCommit.getLinesAdded(), ghCommit.getLinesDeleted(), ghCommit.getFiles().size());
+                                    } catch (Exception e) {
+                                        logger.trace("Failed to get line changes for commit {}: {}", commit.getName(), e.getMessage());
+                                    }
                                     pullRequests.add(pr);
                                 }
                             } catch (Exception e) {
@@ -138,6 +137,13 @@ public class GitHubClient {
                                         commit.getName(),
                                         message
                                 );
+                                // Get line changes from the commit
+                                try {
+                                    GHCommit ghCommit = repository.getCommit(commit.getName());
+                                    pr.setLineChanges(ghCommit.getLinesAdded(), ghCommit.getLinesDeleted(), ghCommit.getFiles().size());
+                                } catch (Exception e1) {
+                                    logger.trace("Failed to get line changes for commit {}: {}", commit.getName(), e1.getMessage());
+                                }
                                 pullRequests.add(pr);
                             }
                         }
@@ -232,5 +238,28 @@ public class GitHubClient {
         
         logger.trace("Failed to get PR #{} after {} retries", prNumber, maxRetries);
         return null;
+    }
+
+    private void populateLineChanges(PullRequest pr, GHPullRequest ghPr) throws IOException {
+        int additions = ghPr.getAdditions();
+        int deletions = ghPr.getDeletions();
+        // For modified lines, we'll use the number of changed files as a proxy since GitHub API
+        // doesn't directly provide modified line count
+        int modified = ghPr.getChangedFiles();
+        pr.setLineChanges(additions, deletions, modified);
+    }
+
+    private PullRequest createPullRequest(GHPullRequest ghPr) throws IOException {
+        PullRequest pr = new PullRequest(
+            ghPr.getNumber(),
+            ghPr.getUser().getLogin(),
+            ghPr.getCreatedAt(),
+            ghPr.getMergedAt(),
+            ghPr.getBase().getRef(),
+            ghPr.getMergeCommitSha(),
+            ghPr.getTitle()
+        );
+        populateLineChanges(pr, ghPr);
+        return pr;
     }
 }
