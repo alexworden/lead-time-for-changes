@@ -1,5 +1,6 @@
 package org.devmetrics.lt4c;
 
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 
@@ -7,6 +8,7 @@ import java.util.List;
  * Data structure containing the results of analyzing a release
  */
 public class ReleaseAnalysis {
+    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z");
     private final String releaseTag;
     private final String releaseCommit;
     private final Date releaseDate;
@@ -53,5 +55,50 @@ public class ReleaseAnalysis {
 
     public double getP90LeadTimeHours() {
         return p90LeadTimeHours;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("Release Analysis for %s (commit: %s)\n", releaseTag, releaseCommit));
+        sb.append("\nPull Requests:\n");
+        for (PullRequest pr : pullRequests) {
+            sb.append(pr.toString()).append("\n");
+        }
+
+        sb.append("\nSummary:\n");
+        sb.append("==========\n");
+        sb.append(String.format("- Release %s was made on %s\n", releaseTag, DATE_FORMAT.format(releaseDate)));
+        sb.append(String.format("- Included %d pull requests\n", pullRequests.size()));
+        sb.append(String.format("- Lead Time Metrics:\n"));
+        sb.append(String.format("  * Average: %.1f hours (%.1f days)\n", averageLeadTimeHours, averageLeadTimeHours/24));
+        sb.append(String.format("  * Median: %.1f hours (%.1f days)\n", medianLeadTimeHours, medianLeadTimeHours/24));
+        sb.append(String.format("  * 90th percentile: %.1f hours (%.1f days)\n", p90LeadTimeHours, p90LeadTimeHours/24));
+        
+        // Add distribution summary
+        int fastPRs = 0; // < 24 hours
+        int mediumPRs = 0; // 24-72 hours
+        int slowPRs = 0; // > 72 hours
+        
+        for (PullRequest pr : pullRequests) {
+            double leadTime = pr.getLeadTimeHours();
+            if (leadTime < 24) {
+                fastPRs++;
+            } else if (leadTime < 72) {
+                mediumPRs++;
+            } else {
+                slowPRs++;
+            }
+        }
+        
+        sb.append("\n- Lead Time Distribution:\n");
+        sb.append(String.format("  * Fast (< 24 hours): %d PRs (%.1f%%)\n", 
+            fastPRs, (fastPRs * 100.0 / pullRequests.size())));
+        sb.append(String.format("  * Medium (24-72 hours): %d PRs (%.1f%%)\n", 
+            mediumPRs, (mediumPRs * 100.0 / pullRequests.size())));
+        sb.append(String.format("  * Slow (> 72 hours): %d PRs (%.1f%%)\n", 
+            slowPRs, (slowPRs * 100.0 / pullRequests.size())));
+
+        return sb.toString();
     }
 }

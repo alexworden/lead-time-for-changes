@@ -41,7 +41,6 @@ public class CLI {
                 .longOpt("start-tag")
                 .desc("Start tag")
                 .hasArg()
-                .required()
                 .build());
 
         options.addOption(Option.builder("e")
@@ -109,6 +108,21 @@ public class CLI {
             LeadTimeAnalyzer analyzer = new LeadTimeAnalyzer(repoDir);
             
             setupGithubClient(githubUrl, token, repoDir, analyzer);
+
+            if (startTag == null) {
+                logger.info("No --start-tag specified, finding previous tag before end tag: {}", endTag);
+                // Open git repository to find previous tag
+                Git git = Git.open(repoDir);
+                try {
+                    // Find the previous release tag
+                    ReleaseLocator locator = new ReleaseLocator(git);
+                    String previousTag = locator.findPreviousReleaseTag(endTag);
+                    logger.info("Found previous tag for {} is tag: {}", endTag, previousTag);
+                    startTag = previousTag;
+                } finally {
+                    git.close();
+                }
+            }
 
             // Analyze the release
             ReleaseAnalysis analysis = analyzer.analyzeRelease(endTag, startTag);
@@ -210,26 +224,6 @@ public class CLI {
     }
 
     private static void printAnalysisResults(ReleaseAnalysis analysis) {
-        System.out.printf("Release Analysis for %s (commit: %s)%n", 
-            analysis.getReleaseTag(), 
-            analysis.getReleaseCommit());
-        System.out.printf("Release Date: %s%n", DATE_FORMAT.format(analysis.getReleaseDate()));
-        System.out.printf("Number of Pull Requests: %d%n", analysis.getPullRequests().size());
-        System.out.printf("Average Lead Time: %.2f hours%n", analysis.getAverageLeadTimeHours());
-        System.out.printf("Median Lead Time: %.2f hours%n", analysis.getMedianLeadTimeHours());
-        System.out.printf("90th Percentile Lead Time: %.2f hours%n", analysis.getP90LeadTimeHours());
-        System.out.println("\nPull Requests:");
-        
-        if (!analysis.getPullRequests().isEmpty()) {
-            for (PullRequest pr : analysis.getPullRequests()) {
-                System.out.printf("PR #%d by %s%n", pr.getNumber(), pr.getAuthor());
-                System.out.printf("  Merged at: %s%n", DATE_FORMAT.format(pr.getMergedAt()));
-                System.out.printf("  Lead Time: %.2f hours%n", pr.getLeadTimeHours());
-                System.out.printf("  Target Branch: %s%n", pr.getTargetBranch());
-                System.out.printf("  Commit: %s%n", pr.getMergeSha());
-                System.out.printf("  Comment: %s%n", pr.getComment().split("\n")[0]);
-                System.out.println();
-            }
-        }
+        System.out.println(analysis.toString());
     }
 }

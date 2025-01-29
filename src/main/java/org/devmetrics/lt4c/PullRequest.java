@@ -1,8 +1,10 @@
 package org.devmetrics.lt4c;
 
+import java.text.SimpleDateFormat;
 import java.util.Date;
 
 public class PullRequest {
+    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z");
     private final int number;
     private final String author;
     private Date createdAt;
@@ -64,5 +66,17 @@ public class PullRequest {
         }
         long diffInMillis = releaseDate.getTime() - mergedAt.getTime();
         return diffInMillis / (1000.0 * 60 * 60); // Convert milliseconds to hours
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("PR #%d by %s\n", number, author));
+        sb.append(String.format("  Merged at: %s\n", DATE_FORMAT.format(mergedAt)));
+        sb.append(String.format("  Lead Time: %.2f hours\n", getLeadTimeHours()));
+        sb.append(String.format("  Target Branch: %s\n", targetBranch));
+        sb.append(String.format("  Commit: %s\n", mergeSha));
+        sb.append(String.format("  Comment: %s", comment.split("\n")[0]));
+        return sb.toString();
     }
 }
