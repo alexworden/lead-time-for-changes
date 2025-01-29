@@ -12,17 +12,22 @@ public class ReleaseAnalysis {
     private final String releaseTag;
     private final String releaseCommit;
     private final Date releaseDate;
+    private final String fromReleaseTag;
+    private final Date fromReleaseDate;
     private final List<PullRequest> pullRequests;
     private final double averageLeadTimeHours;
     private final double medianLeadTimeHours;
     private final double p90LeadTimeHours;
 
     public ReleaseAnalysis(String releaseTag, String releaseCommit, Date releaseDate, 
+                          String fromReleaseTag, Date fromReleaseDate,
                           List<PullRequest> pullRequests, double averageLeadTimeHours, 
                           double medianLeadTimeHours, double p90LeadTimeHours) {
         this.releaseTag = releaseTag;
         this.releaseCommit = releaseCommit;
         this.releaseDate = releaseDate;
+        this.fromReleaseTag = fromReleaseTag;
+        this.fromReleaseDate = fromReleaseDate;
         this.pullRequests = pullRequests;
         this.averageLeadTimeHours = averageLeadTimeHours;
         this.medianLeadTimeHours = medianLeadTimeHours;
@@ -39,6 +44,14 @@ public class ReleaseAnalysis {
 
     public Date getReleaseDate() {
         return releaseDate;
+    }
+
+    public String getFromReleaseTag() {
+        return fromReleaseTag;
+    }
+
+    public Date getFromReleaseDate() {
+        return fromReleaseDate;
     }
 
     public List<PullRequest> getPullRequests() {

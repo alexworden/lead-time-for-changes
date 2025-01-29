@@ -4,19 +4,15 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
-import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.*;
-import java.util.regex.Pattern;
 
 public class LeadTimeAnalyzer {
     private static final Logger logger = LoggerFactory.getLogger(LeadTimeAnalyzer.class);
-    private static final Pattern PR_MERGE_PATTERN = Pattern.compile("Merge pull request #(\\d+) from (.+)");
-    private static final Pattern PR_SQUASH_PATTERN = Pattern.compile("\\(#(\\d+)\\)$");
 
     private final Repository repository;
     private final Git git;
@@ -47,21 +43,24 @@ public class LeadTimeAnalyzer {
 
         // Get release commit info
         logger.info("Resolving release references: {} and {}", releaseRef, previousReleaseRef);
-        ObjectId releaseCommit = repository.resolve(releaseRef + "^{commit}");
-        ObjectId previousReleaseCommit = repository.resolve(previousReleaseRef + "^{commit}");
+        ObjectId releaseCommit = repository.resolve(releaseRef);
+        ObjectId previousReleaseCommit = repository.resolve(previousReleaseRef);
 
         if (releaseCommit == null || previousReleaseCommit == null) {
-            String errorMsg = String.format("Failed to resolve commits. Release commit: {}, Previous release commit: {}",
-              (releaseCommit != null ? releaseCommit.getName() : "null"),
-              (previousReleaseCommit != null ? previousReleaseCommit.getName() : "null"));
-            throw new IllegalStateException(errorMsg);
+            throw new IllegalArgumentException("Could not resolve release refs: " + releaseRef + " or " + previousReleaseRef);
         }
 
-        // Get release date from the commit
-        RevWalk walk = new RevWalk(repository);
-        RevCommit releaseCommitObj = walk.parseCommit(releaseCommit);
-        Date releaseDate = releaseCommitObj.getAuthorIdent().getWhen();
-        walk.dispose();
+        Date releaseDate = null;
+        RevCommit releaseCommitObj = git.log().add(releaseCommit).setMaxCount(1).call().iterator().next();
+        if (releaseCommitObj != null) {
+            releaseDate = releaseCommitObj.getAuthorIdent().getWhen();
+        }
+
+        Date fromReleaseDate = null;
+        RevCommit fromReleaseCommitObj = git.log().add(previousReleaseCommit).setMaxCount(1).call().iterator().next();
+        if (fromReleaseCommitObj != null) {
+            fromReleaseDate = fromReleaseCommitObj.getAuthorIdent().getWhen();
+        }
 
         logger.info("Successfully resolved commits between Previous {} and Release: {}",
             previousReleaseCommit.getName(), releaseCommit.getName());
@@ -87,6 +86,8 @@ public class LeadTimeAnalyzer {
             releaseRef,
             releaseCommit.getName(),
             releaseDate,
+            previousReleaseRef,
+            fromReleaseDate,
             pullRequests,
             averageLeadTime,
             medianLeadTime,

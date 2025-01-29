@@ -14,7 +14,6 @@ import java.text.SimpleDateFormat;
 public class CLI {
     private static final Logger logger = LoggerFactory.getLogger(CLI.class);
     private static final String DEFAULT_CACHE_DIR = System.getProperty("user.home") + "/.leadtime/repos";
-    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z");
 
     public static void main(String[] args) {
         Options options = new Options();
@@ -37,15 +36,15 @@ public class CLI {
                 .hasArg()
                 .build());
 
-        options.addOption(Option.builder("s")
-                .longOpt("start-tag")
-                .desc("Start tag")
+        options.addOption(Option.builder("fr")
+                .longOpt("from-release")
+                .desc("From release (optional starting point)")
                 .hasArg()
                 .build());
 
-        options.addOption(Option.builder("e")
-                .longOpt("end-tag")
-                .desc("End tag")
+        options.addOption(Option.builder("tr")
+                .longOpt("target-release")
+                .desc("Target release")
                 .hasArg()
                 .required()
                 .build());
@@ -69,8 +68,8 @@ public class CLI {
             String directory = cmd.getOptionValue("directory");
             String githubUrl = cmd.getOptionValue("github-url");
             String token = cmd.getOptionValue("token", System.getenv("LT4C_GIT_TOKEN"));
-            String startTag = cmd.getOptionValue("start-tag");
-            String endTag = cmd.getOptionValue("end-tag");
+            String fromRelease = cmd.getOptionValue("from-release");
+            String targetRelease = cmd.getOptionValue("target-release");
 
             File repoDir;
             if (githubUrl != null) {
@@ -109,28 +108,35 @@ public class CLI {
             
             setupGithubClient(githubUrl, token, repoDir, analyzer);
 
-            if (startTag == null) {
-                logger.info("No --start-tag specified, finding previous tag before end tag: {}", endTag);
+            if (fromRelease == null) {
+                logger.info("No --from-release specified, finding previous tag before target release: {}", targetRelease);
                 // Open git repository to find previous tag
                 Git git = Git.open(repoDir);
                 try {
                     // Find the previous release tag
                     ReleaseLocator locator = new ReleaseLocator(git);
-                    String previousTag = locator.findPreviousReleaseTag(endTag);
-                    logger.info("Found previous tag for {} is tag: {}", endTag, previousTag);
-                    startTag = previousTag;
+                    String previousTag = locator.findPreviousReleaseTag(targetRelease);
+                    logger.info("Found previous tag for {} is tag: {}", targetRelease, previousTag);
+                    fromRelease = previousTag;
                 } finally {
                     git.close();
                 }
             }
 
             // Analyze the release
-            ReleaseAnalysis analysis = analyzer.analyzeRelease(endTag, startTag);
+            ReleaseAnalysis analysis = analyzer.analyzeRelease(targetRelease, fromRelease);
             printAnalysisResults(analysis);
 
         } catch (ParseException e) {
             System.err.println("Error: " + e.getMessage());
-            formatter.printHelp("leadtime", options);
+            formatter.printHelp("lt4c", 
+                "\nAnalyze lead time for changes between releases in a Git repository.\n\n" +
+                "Examples:\n" +
+                "  lt4c --directory /path/to/repo --target-release v1.0.0\n" +
+                "  lt4c --github-url https://github.com/org/repo --target-release v1.0.0 --from-release v0.9.0\n\n",
+                options,
+                "\nNote: If --from-release is not specified, the previous release tag will be automatically detected.",
+                true);
             System.exit(1);
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
@@ -155,17 +161,6 @@ public class CLI {
                     System.err.println("Warning: Failed to initialize GitHub client. Falling back to git log analysis: " + e.getMessage());
                 }
             }
-        }
-    }
-
-    private static boolean isGitHubRepo(File repoDir) {
-        try {
-            Git git = Git.open(repoDir);
-            String url = git.getRepository().getConfig().getString("remote", "origin", "url");
-            git.close();
-            return url != null && (url.contains("github.com") || url.contains("github."));
-        } catch (Exception e) {
-            return false;
         }
     }
 
@@ -224,6 +219,52 @@ public class CLI {
     }
 
     private static void printAnalysisResults(ReleaseAnalysis analysis) {
-        System.out.println(analysis.toString());
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z");
+
+        // Print individual PR details
+        for (PullRequest pr : analysis.getPullRequests()) {
+            System.out.println("PR #" + pr.getNumber() + " by " + pr.getAuthor());
+            System.out.println("  Merged at: " + dateFormat.format(pr.getMergedAt()));
+            System.out.println("  Lead Time: " + String.format("%.2f", pr.getLeadTimeHours()) + " hours");
+            System.out.println("  Target Branch: " + pr.getTargetBranch());
+            System.out.println("  Commit: " + pr.getMergeSha());
+            System.out.println("  Comment: " + pr.getComment());
+        }
+
+        System.out.println("\nSummary:");
+        System.out.println("==========");
+        System.out.println("- Release " + analysis.getReleaseTag() + " was made on " + dateFormat.format(analysis.getReleaseDate()));
+        System.out.println("- From Release " + analysis.getFromReleaseTag() + " was made on " + dateFormat.format(analysis.getFromReleaseDate()));
+        System.out.println("- Included " + analysis.getPullRequests().size() + " pull requests");
+
+        // Lead Time Metrics
+        System.out.println("- Lead Time Metrics:");
+        System.out.printf("  * Average: %.1f hours (%.1f days)%n", 
+            analysis.getAverageLeadTimeHours(), 
+            analysis.getAverageLeadTimeHours() / 24.0);
+        System.out.printf("  * Median: %.1f hours (%.1f days)%n", 
+            analysis.getMedianLeadTimeHours(), 
+            analysis.getMedianLeadTimeHours() / 24.0);
+        System.out.printf("  * 90th percentile: %.1f hours (%.1f days)%n", 
+            analysis.getP90LeadTimeHours(), 
+            analysis.getP90LeadTimeHours() / 24.0);
+
+        // Lead Time Distribution
+        int fastCount = 0, mediumCount = 0, slowCount = 0;
+        for (PullRequest pr : analysis.getPullRequests()) {
+            double leadTime = pr.getLeadTimeHours();
+            if (leadTime < 24) fastCount++;
+            else if (leadTime < 72) mediumCount++;
+            else slowCount++;
+        }
+        int total = analysis.getPullRequests().size();
+        
+        System.out.println("\n- Lead Time Distribution:");
+        System.out.printf("  * Fast (< 24 hours): %d PRs (%.1f%%)%n", 
+            fastCount, (fastCount * 100.0) / total);
+        System.out.printf("  * Medium (24-72 hours): %d PRs (%.1f%%)%n", 
+            mediumCount, (mediumCount * 100.0) / total);
+        System.out.printf("  * Slow (> 72 hours): %d PRs (%.1f%%)%n", 
+            slowCount, (slowCount * 100.0) / total);
     }
 }
