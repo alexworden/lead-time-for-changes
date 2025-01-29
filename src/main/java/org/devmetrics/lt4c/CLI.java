@@ -223,14 +223,7 @@ public class CLI {
 
         // Print individual PR details
         for (PullRequest pr : analysis.getPullRequests()) {
-            System.out.println("PR #" + pr.getNumber() + " by " + pr.getAuthor());
-            System.out.println("  Merged at: " + dateFormat.format(pr.getMergedAt()));
-            System.out.println("  Lead Time: " + String.format("%.2f", pr.getLeadTimeHours()) + " hours");
-            System.out.println("  Target Branch: " + pr.getTargetBranch());
-            System.out.println("  Commit: " + pr.getMergeSha());
-            System.out.println("  Comment: " + pr.getComment());
-            System.out.println("  Changes: +" + pr.getLinesAdded() + " -" + pr.getLinesDeleted() + 
-                             " ~" + pr.getLinesModified() + " lines");
+            System.out.println(pr.toString());
         }
 
         System.out.println("\nSummary:");
