@@ -23,7 +23,7 @@ public class ReleaseLocator {
     }
 
     public String findPreviousReleaseTag(String releaseTag) throws IOException, GitAPIException {
-        logger.info("Finding previous release tag for: {}", releaseTag);
+        logger.debug("Finding previous release tag for: {}", releaseTag);
         
         Repository repo = git.getRepository();
         Ref targetRef = repo.findRef(releaseTag);
@@ -32,7 +32,7 @@ public class ReleaseLocator {
         }
         
         if (targetRef == null) {
-            logger.warn("Could not find tag: {}", releaseTag);
+            logger.debug("Could not find tag: {}", releaseTag);
             return null;
         }
 
@@ -45,7 +45,7 @@ public class ReleaseLocator {
             normalizedReleaseTag.substring(1).split("\\.")[0] : 
             normalizedReleaseTag.split("\\.")[0];
             
-        logger.info("Looking for tags with major version: {}", majorVersion);
+        logger.debug("Looking for tags with major version: {}", majorVersion);
         List<String> allTags = new ArrayList<>();
         
         try (RevWalk walk = new RevWalk(repo)) {
@@ -88,7 +88,7 @@ public class ReleaseLocator {
             return -Integer.compare(partsA.length, partsB.length);
         });
         
-        logger.info("Found {} matching tags with major version {}", allTags.size(), majorVersion);
+        logger.debug("Found {} matching tags with major version {}", allTags.size(), majorVersion);
         
         // Find the previous tag by looking at sorted list
         String previousTag = null;

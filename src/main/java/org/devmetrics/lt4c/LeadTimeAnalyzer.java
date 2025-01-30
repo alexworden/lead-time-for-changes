@@ -36,17 +36,14 @@ public class LeadTimeAnalyzer {
     public ReleaseAnalysis analyzeRelease(String releaseRef, String previousReleaseRef) throws Exception {
         // Only fetch tags if we have a remote repository and can authenticate
         try {
-            logger.info("Fetching tags...");
+            logger.debug("Fetching tags...");
             git.fetch().setRefSpecs("+refs/tags/*:refs/tags/*").call();
-            logger.info("Tags fetched successfully");
+            logger.debug("Tags fetched successfully");
         } catch (org.eclipse.jgit.api.errors.InvalidRemoteException e) {
-            logger.debug("No remote repository found, skipping tag fetch");
+            logger.warn("No remote repository found, skipping tag fetch");
         } catch (org.eclipse.jgit.api.errors.TransportException e) {
-            logger.debug("Unable to fetch from remote repository (authentication or connection issue), skipping tag fetch: {}", e.getMessage());
+            logger.warn("Unable to fetch from remote repository (authentication or connection issue), skipping tag fetch: {}", e.getMessage());
         }
-
-        // Get release commit info
-        logger.info("Resolving release references: {} and {}", releaseRef, previousReleaseRef);
         
         try (RevWalk walk = new RevWalk(repository)) {
             ObjectId releaseId = repository.resolve(releaseRef);
@@ -79,8 +76,8 @@ public class LeadTimeAnalyzer {
             RevCommit releaseCommit = (RevCommit) releaseObj;
             RevCommit previousReleaseCommit = (RevCommit) previousReleaseObj;
 
-            logger.debug("Resolved release '{}' to commit: {}", releaseRef, releaseCommit.getName());
-            logger.debug("Resolved previous release '{}' to commit: {}", previousReleaseRef, previousReleaseCommit.getName());
+            logger.info("Resolved release '{}' to commit: {}", releaseRef, releaseCommit.getName());
+            logger.info("Resolved previous release '{}' to commit: {}", previousReleaseRef, previousReleaseCommit.getName());
 
             Date releaseDate = null;
             if (releaseCommit != null) {
@@ -91,9 +88,6 @@ public class LeadTimeAnalyzer {
             if (previousReleaseCommit != null) {
                 fromReleaseDate = previousReleaseCommit.getAuthorIdent().getWhen();
             }
-
-            logger.info("Successfully resolved commits between Previous {} and Release: {}",
-                previousReleaseCommit.getName(), releaseCommit.getName());
 
             List<PullRequest> pullRequests = githubClient.getPullRequestsBetweenTags(previousReleaseRef, releaseRef);
 

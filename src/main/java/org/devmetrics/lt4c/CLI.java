@@ -7,7 +7,7 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
+import ch.qos.logback.classic.Level;
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -74,7 +74,12 @@ public class CLI {
             
             // Set logging level based on debug flag
             if (cmd.hasOption("debug")) {
-                System.setProperty("LOG_LEVEL", "TRACE");
+                Logger logger = LoggerFactory.getLogger("org.devmetrics");
+                if (logger instanceof ch.qos.logback.classic.Logger) {
+                    ((ch.qos.logback.classic.Logger) logger).setLevel(Level.TRACE);
+                } else {
+                    System.err.println("Warning: Unable to set log level - not using Logback implementation");
+                }
             }
 
             File repoDir;
@@ -88,14 +93,14 @@ public class CLI {
                     
                     // Try to fetch tags if we have a token
                     if (token != null) {
-                        logger.info("Attempting to fetch tags for local repository: {}", repoDir);
+                        logger.debug("Attempting to fetch tags for local repository: {}", repoDir);
                         try {
                             git.fetch()
                                 .setRefSpecs("+refs/tags/*:refs/tags/*")
                                 .setTagOpt(TagOpt.FETCH_TAGS)
                                 .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
                                 .call();
-                            logger.info("Tags fetched successfully");
+                            logger.debug("Tags fetched successfully");
                         } catch (GitAPIException e) {
                             logger.warn("Failed to fetch tags: {}. Will use local tags only.", e.getMessage());
                         }
@@ -159,12 +164,12 @@ public class CLI {
             
             if (url != null) {
                 try {
-                    logger.info("Initializing GitHub client with URL: {} and token: {}", url, token != null ? "present" : "missing");
+                    logger.debug("Initializing GitHub client with URL: {} and token: {}", url, token != null ? "present" : "missing");
                     GitHubClient githubClient = new GitHubClient(token, url, repoDir);
                     analyzer.setGitHubClient(githubClient);
-                    logger.info("GitHub client initialized successfully");
+                    logger.debug("GitHub client initialized successfully");
                 } catch (IOException e) {
-                    logger.error("Failed to initialize GitHub client", e);
+                    logger.debug("Failed to initialize GitHub client", e);
                     System.err.println("Warning: Failed to initialize GitHub client. Falling back to git log analysis: " + e.getMessage());
                 }
             }

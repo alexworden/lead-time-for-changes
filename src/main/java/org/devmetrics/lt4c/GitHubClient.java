@@ -51,7 +51,7 @@ public class GitHubClient {
             repoPath = repoPath.substring(0, repoPath.length() - 4);
         }
         
-        logger.info("Connecting to GitHub repository at {}: {}", githubHost, repoPath);
+        logger.debug("Connecting to GitHub repository at {}: {}", githubHost, repoPath);
         
         // Configure GitHub client based on host
         if (githubHost.equals("github.com")) {
@@ -65,7 +65,7 @@ public class GitHubClient {
         }
         
         repository = github.getRepository(repoPath);
-        logger.info("Successfully connected to repository");
+        logger.debug("Successfully connected to repository");
         
         // Initialize JGit
         git = Git.open(repoDir);
@@ -75,7 +75,7 @@ public class GitHubClient {
     public List<PullRequest> getPullRequestsBetweenTags(String fromTag, String toTag) throws IOException {
         List<PullRequest> pullRequests = new ArrayList<>();
         
-        logger.info("Getting commit hashes for tags {} and {}", fromTag, toTag);
+        logger.info("Identifying pull requests between tags {} and {}", fromTag, toTag);
         
         try (RevWalk walk = new RevWalk(gitRepo)) {
             // Get the commit objects from the local repository
@@ -122,13 +122,11 @@ public class GitHubClient {
             for (RevCommit commit : commits) {
                 if (commit.getParentCount() <= 1) { // Skip merge commits
                     String message = commit.getFullMessage();
-                    logger.debug("Processing commit {} with message: {}", commit.getName(), message);
-                    
                     try {
                         String prNumber = extractPRNumber(message);
                         
                         if (prNumber != null) {
-                            logger.debug("Found PR number {} in commit {}", prNumber, commit.getName());
+                            logger.debug("Found PR number {} in commit {} with message: {}", prNumber, commit.getName(), message);
                             try {
                                 GHPullRequest ghPr = getPullRequestWithRetry(Integer.parseInt(prNumber));
                                 if (ghPr != null && ghPr.isMerged()) {
@@ -185,7 +183,7 @@ public class GitHubClient {
             try {
                 logger.trace("Attempting to get PR #{} (attempt {}/{})", prNumber, i + 1, maxRetries);
                 GHPullRequest pr = repository.getPullRequest(prNumber);
-                logger.trace("Successfully retrieved PR #{}", prNumber);
+                logger.debug("Successfully retrieved PR #{}", prNumber);
                 return pr;
             } catch (IOException e) {
                 String message = e.getMessage();
@@ -225,7 +223,7 @@ public class GitHubClient {
             }
         }
         
-        logger.trace("Failed to get PR #{} after {} retries", prNumber, maxRetries);
+        logger.debug("Failed to get PR #{} after {} retries", prNumber, maxRetries);
         return null;
     }
 
