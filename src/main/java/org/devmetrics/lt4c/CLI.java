@@ -132,6 +132,9 @@ public class CLI {
                     fromRelease = previousTag;
                 } finally {
                     git.close();
+                }            
+                if (fromRelease == null) {
+                    throw new Exception("Could not find previous release tag before target release: " + targetRelease);
                 }
             }
 
