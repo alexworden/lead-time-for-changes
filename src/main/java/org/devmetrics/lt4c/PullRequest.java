@@ -100,7 +100,7 @@ public class PullRequest {
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("PR #%d by %s\n", number, author));
-        sb.append(String.format("  Comment: %s", comment.split("\n")[0]));
+        sb.append(String.format("  Comment: %s\n", comment.split("\n")[0]));
         sb.append(String.format("  Merged at: %s\n", DATE_FORMAT.format(mergedAt)));
         sb.append(String.format("  Lead Time: %.2f hours\n", getLeadTimeHours()));
         sb.append(String.format("  Target Branch: %s\n", targetBranch));
