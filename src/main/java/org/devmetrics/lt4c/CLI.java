@@ -2,6 +2,7 @@ package org.devmetrics.lt4c;
 
 import org.apache.commons.cli.*;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.transport.TagOpt;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.slf4j.Logger;
@@ -86,6 +87,7 @@ public class CLI {
                         try {
                             git.fetch()
                                 .setRefSpecs("+refs/tags/*:refs/tags/*")
+                                .setTagOpt(TagOpt.FETCH_TAGS)
                                 .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
                                 .call();
                             logger.info("Tags fetched successfully");
@@ -199,6 +201,7 @@ public class CLI {
                     .setURI(githubUrl)
                     .setDirectory(repoDir)
                     .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
+                    .setTagOption(TagOpt.FETCH_TAGS)
                     .call()
                     .close();
         } else {
@@ -207,6 +210,8 @@ public class CLI {
             try {
                 logger.info("Fetching latest changes...");
                 git.fetch()
+                        .setRefSpecs("+refs/tags/*:refs/tags/*")
+                        .setTagOpt(TagOpt.FETCH_TAGS)
                         .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
                         .call();
             } catch (GitAPIException e) {

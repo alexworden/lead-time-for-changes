@@ -57,7 +57,7 @@ public class ReleaseLocator {
                     // Peel the tag to get the actual commit it points to
                     RevObject obj = walk.parseAny(ref.getObjectId());
                     while (obj instanceof RevTag) {
-                        obj = walk.parseAny(((RevTag) obj).getObject());
+                        obj = walk.peel(obj);
                     }
                     if (obj instanceof RevCommit) {
                         RevCommit commit = (RevCommit) obj;
