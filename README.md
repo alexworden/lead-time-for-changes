@@ -2,6 +2,12 @@
 
 A tool to analyze lead time for changes in Git repositories by examining pull requests and their time to release.
 
+## Requirements
+
+- Java 17 or higher
+- Maven 3.6 or higher
+- Git
+
 ## Features
 
 - Analyze lead time for changes between any two Git releases/tags
@@ -12,59 +18,75 @@ A tool to analyze lead time for changes in Git repositories by examining pull re
 - Summary statistics for the analyzed time period
 - Debug logging support for detailed analysis
 
+## Build
+
+To build the project:
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd lead-time-for-changes
+```
+
+2. Build with Maven:
+```bash
+mvn clean package
+```
+
+This will create an executable jar with all dependencies at `target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar`
+
 ## Usage
 
 You can analyze a repository in two ways:
 
 1. Using a local Git repository:
 ```bash
-java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
+java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
   --directory /path/to/repo \
-  -s v1.0.0 \
-  -e v2.0.0
+  --from-release v1.0.0 \
+  --target-release v2.0.0
 ```
 
 2. Using a GitHub repository URL:
 ```bash
-java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
+java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
   --github-url https://github.com/owner/repo \
-  -s v1.0.0 \
-  -e v2.0.0
+  --target-release v2.0.0
 ```
 
 ### Options
 
-- `--directory` or `-D`: Path to local Git repository
-- `--github-url` or `-g`: Full GitHub repository URL
-- `-s` or `--start-release`: Start release tag/commit (defaults to end-release~1)
-- `-e` or `--end-release`: End release tag/commit (defaults to HEAD)
-- `-d` or `--debug`: Enable debug logging
+- `-d` or `--directory`: Path to local Git repository
+- `-u` or `--github-url`: GitHub repository URL
+- `-t` or `--token`: GitHub token (can also be set via `LT4C_GIT_TOKEN` environment variable)
+- `-fr` or `--from-release`: Starting release tag/commit (optional)
+- `-tr` or `--target-release`: Target release tag/commit (required)
 - `-l` or `--limit`: Limit number of releases to analyze
+- `-g` or `--debug`: Enable debug logging
 
 ### Examples
 
-1. Analyze local repository between two tags:
+1. Analyze local repository between two releases:
 ```bash
-java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
+java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
   --directory /path/to/repo \
-  -s v1.0.0 \
-  -e v2.0.0
+  --from-release v1.0.0 \
+  --target-release v2.0.0
 ```
 
-2. Analyze GitHub repository between two tags:
+2. Analyze GitHub repository with authentication:
 ```bash
-java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
-  --github-url https://github.com/intuit/auto \
-  -s v11.0.5 \
-  -e v11.1.0
+export LT4C_GIT_TOKEN=your_github_token
+java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
+  --github-url https://github.com/owner/repo \
+  --target-release v2.0.0
 ```
 
 3. Analyze with debug logging enabled:
 ```bash
-java -jar target/lead-time-for-changes-1.0-SNAPSHOT-jar-with-dependencies.jar \
-  --github-url https://github.com/intuit/auto \
-  -s v11.0.5 \
-  -e v11.1.0 \
+java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
+  --github-url https://github.com/owner/repo \
+  --target-release v2.0.0 \
   --debug
 ```
 
@@ -72,15 +94,6 @@ You can also enable debug logging by setting the environment variable:
 ```bash
 export LOGBACK_LEVEL=DEBUG
 ```
-
-## Build
-
-To build the project:
-```bash
-mvn clean package
-```
-
-This will create an executable jar with all dependencies in the `target` directory.
 
 ## Output Format
 
