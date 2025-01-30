@@ -2,8 +2,12 @@ package org.devmetrics.lt4c;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevObject;
+import org.eclipse.jgit.revwalk.RevTag;
+import org.eclipse.jgit.revwalk.RevWalk;
 import org.kohsuke.github.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,17 +77,45 @@ public class GitHubClient {
         
         logger.info("Getting commit hashes for tags {} and {}", fromTag, toTag);
         
-        try {
-            // Get the commit objects
-            String fromCommit = repository.getRef("tags/" + fromTag).getObject().getSha();
-            String toCommit = repository.getRef("tags/" + toTag).getObject().getSha();
+        try (RevWalk walk = new RevWalk(gitRepo)) {
+            // Get the commit objects from the local repository
+            ObjectId fromId = gitRepo.resolve(fromTag);
+            ObjectId toId = gitRepo.resolve(toTag);
             
-            logger.info("Getting commits between {} and {}", fromCommit, toCommit);
+            if (fromId == null || toId == null) {
+                throw new IllegalArgumentException(String.format(
+                    "Could not resolve tags. From tag '%s' resolved to: %s, To tag '%s' resolved to: %s",
+                    fromTag, fromId, toTag, toId));
+            }
+            
+            // Peel tags to get their underlying commits
+            RevObject fromObj = walk.parseAny(fromId);
+            while (fromObj instanceof RevTag) {
+                fromObj = walk.peel(fromObj);
+            }
+            
+            RevObject toObj = walk.parseAny(toId);
+            while (toObj instanceof RevTag) {
+                toObj = walk.peel(toObj);
+            }
+            
+            if (!(fromObj instanceof RevCommit) || !(toObj instanceof RevCommit)) {
+                throw new IllegalArgumentException(String.format(
+                    "Could not resolve tags to commits. From tag '%s' resolved to %s, To tag '%s' resolved to %s",
+                    fromTag, fromObj.getClass().getSimpleName(),
+                    toTag, toObj.getClass().getSimpleName()));
+            }
+            
+            RevCommit fromCommit = (RevCommit) fromObj;
+            RevCommit toCommit = (RevCommit) toObj;
+            
+            logger.debug("Resolved from tag '{}' to commit: {}", fromTag, fromCommit.getName());
+            logger.debug("Resolved to tag '{}' to commit: {}", toTag, toCommit.getName());
             
             // Use JGit to get all non-merge commits
             Iterable<RevCommit> commits = git.log()
-                .add(gitRepo.resolve(toCommit))
-                .not(gitRepo.resolve(fromCommit))
+                .add(toCommit)
+                .not(fromCommit)
                 .call();
             
             // For each commit, try to find its associated PR
