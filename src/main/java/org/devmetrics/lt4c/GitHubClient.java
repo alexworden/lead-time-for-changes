@@ -122,65 +122,30 @@ public class GitHubClient {
             for (RevCommit commit : commits) {
                 if (commit.getParentCount() <= 1) { // Skip merge commits
                     String message = commit.getFullMessage();
-                    logger.trace("Processing commit {} with message: {}", commit.getName(), message);
+                    logger.debug("Processing commit {} with message: {}", commit.getName(), message);
                     
                     try {
                         String prNumber = extractPRNumber(message);
                         
                         if (prNumber != null) {
-                            logger.trace("Found PR number {} in commit {}", prNumber, commit.getName());
+                            logger.debug("Found PR number {} in commit {}", prNumber, commit.getName());
                             try {
                                 GHPullRequest ghPr = getPullRequestWithRetry(Integer.parseInt(prNumber));
                                 if (ghPr != null && ghPr.isMerged()) {
-                                    logger.trace("Found PR #{}: {}", ghPr.getNumber(), ghPr.getTitle());
+                                    logger.debug("Found PR #{}: {}", ghPr.getNumber(), ghPr.getTitle());
                                     PullRequest pr = createPullRequest(ghPr);
                                     pullRequests.add(pr);
                                 } else {
-                                    // PR not found or not accessible, create one from commit info
-                                    logger.trace("Creating PR from commit info for #{}", prNumber);
-                                    PullRequest pr = new PullRequest(
-                                            Integer.parseInt(prNumber),
-                                            commit.getAuthorIdent().getName(),
-                                            new Date(commit.getCommitTime() * 1000L),
-                                            new Date(commit.getCommitTime() * 1000L),
-                                            "main", // Assuming main branch
-                                            commit.getName(),
-                                            message
-                                    );
-                                    // Get line changes from the commit
-                                    try {
-                                        GHCommit ghCommit = repository.getCommit(commit.getName());
-                                        pr.setLineChanges(ghCommit.getLinesAdded(), ghCommit.getLinesDeleted(), ghCommit.getFiles().size());
-                                    } catch (Exception e) {
-                                        logger.trace("Failed to get line changes for commit {}: {}", commit.getName(), e.getMessage());
-                                    }
-                                    pullRequests.add(pr);
+                                    logger.debug("PR #{} not found or not merged", prNumber);
                                 }
                             } catch (Exception e) {
-                                logger.trace("Failed to get PR details for #{}: {}", prNumber, e.getMessage());
-                                // Create PR from commit info as fallback
-                                logger.trace("Creating PR from commit info for #{} after error", prNumber);
-                                PullRequest pr = new PullRequest(
-                                        Integer.parseInt(prNumber),
-                                        commit.getAuthorIdent().getName(),
-                                        new Date(commit.getCommitTime() * 1000L),
-                                        new Date(commit.getCommitTime() * 1000L),
-                                        "main", // Assuming main branch
-                                        commit.getName(),
-                                        message
-                                );
-                                // Get line changes from the commit
-                                try {
-                                    GHCommit ghCommit = repository.getCommit(commit.getName());
-                                    pr.setLineChanges(ghCommit.getLinesAdded(), ghCommit.getLinesDeleted(), ghCommit.getFiles().size());
-                                } catch (Exception e1) {
-                                    logger.trace("Failed to get line changes for commit {}: {}", commit.getName(), e1.getMessage());
-                                }
-                                pullRequests.add(pr);
+                                logger.error("Failed to get PR details for PR#{} for commit {}", prNumber, commit.getName(), e);
                             }
+                        } else {
+                            logger.debug("No PR number found in commit {} with message: {}", commit.getName(), message);
                         }
                     } catch (Exception e) {
-                        logger.trace("Failed to process commit {}: {}", commit.getName(), e.getMessage());
+                        logger.error("Failed to process commit {}", commit.getName(), e);
                     }
                 }
             }
@@ -196,15 +161,7 @@ public class GitHubClient {
         // Common PR reference patterns
         String[] patterns = {
             "\\(#(\\d+)\\)",                   // (#1234)
-            "Merge pull request #(\\d+)",      // Merge pull request #1234
-            "(?i)Closes gh-(\\d+)",            // Keep existing patterns as fallback
-            "(?i)Fixes gh-(\\d+)",
-            "(?i)Resolves gh-(\\d+)",
-            "(?i)Close gh-(\\d+)",
-            "(?i)Fix gh-(\\d+)",
-            "(?i)Resolve gh-(\\d+)",
-            "(?i)See gh-(\\d+)",
-            "(?i)gh-(\\d+)"
+            "Merge pull request #(\\d+)"      // Merge pull request #1234
         };
         
         for (String pattern : patterns) {

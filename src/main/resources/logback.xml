@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<configuration>
+<configuration debug="true">
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%msg%n</pattern>
+            <pattern>[%level] %logger{0}: %msg%n</pattern>
         </encoder>
     </appender>
 
@@ -13,5 +13,7 @@
 
     <!-- Set JGit logging to WARN to hide debug messages -->
     <logger name="org.eclipse.jgit" level="WARN" />
-    <logger name="org.devmetrics" level="INFO" />
+    
+    <!-- Our application logging - controlled by system property -->
+    <logger name="org.devmetrics" level="TRACE" />
 </configuration>

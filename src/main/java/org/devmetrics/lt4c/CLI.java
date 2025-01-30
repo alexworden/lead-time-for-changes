@@ -71,6 +71,11 @@ public class CLI {
             String token = cmd.getOptionValue("token", System.getenv("LT4C_GIT_TOKEN"));
             String fromRelease = cmd.getOptionValue("from-release");
             String targetRelease = cmd.getOptionValue("target-release");
+            
+            // Set logging level based on debug flag
+            if (cmd.hasOption("debug")) {
+                System.setProperty("LOG_LEVEL", "TRACE");
+            }
 
             File repoDir;
             if (githubUrl != null) {
