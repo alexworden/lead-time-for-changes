@@ -43,12 +43,17 @@ public class LeadTimeAnalyzer {
 
         // Get release commit info
         logger.info("Resolving release references: {} and {}", releaseRef, previousReleaseRef);
-        ObjectId releaseCommit = repository.resolve(releaseRef);
-        ObjectId previousReleaseCommit = repository.resolve(previousReleaseRef);
+        ObjectId releaseCommit = repository.resolve(releaseRef + "^{commit}");
+        ObjectId previousReleaseCommit = repository.resolve(previousReleaseRef + "^{commit}");
 
         if (releaseCommit == null || previousReleaseCommit == null) {
-            throw new IllegalArgumentException("Could not resolve release refs: " + releaseRef + " or " + previousReleaseRef);
+            throw new IllegalArgumentException(String.format(
+                "Could not resolve release refs to commits. Release '%s' resolved to: %s, Previous '%s' resolved to: %s",
+                releaseRef, releaseCommit, previousReleaseRef, previousReleaseCommit));
         }
+
+        logger.debug("Resolved release '{}' to commit: {}", releaseRef, releaseCommit.getName());
+        logger.debug("Resolved previous release '{}' to commit: {}", previousReleaseRef, previousReleaseCommit.getName());
 
         Date releaseDate = null;
         RevCommit releaseCommitObj = git.log().add(releaseCommit).setMaxCount(1).call().iterator().next();
