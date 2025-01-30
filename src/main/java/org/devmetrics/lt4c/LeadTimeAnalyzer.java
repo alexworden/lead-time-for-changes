@@ -4,11 +4,15 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevObject;
+import org.eclipse.jgit.revwalk.RevTag;
+import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.*;
 
 public class LeadTimeAnalyzer {
@@ -43,61 +47,83 @@ public class LeadTimeAnalyzer {
 
         // Get release commit info
         logger.info("Resolving release references: {} and {}", releaseRef, previousReleaseRef);
-        ObjectId releaseCommit = repository.resolve(releaseRef + "^{commit}");
-        ObjectId previousReleaseCommit = repository.resolve(previousReleaseRef + "^{commit}");
+        
+        try (RevWalk walk = new RevWalk(repository)) {
+            ObjectId releaseId = repository.resolve(releaseRef);
+            ObjectId previousReleaseId = repository.resolve(previousReleaseRef);
 
-        if (releaseCommit == null || previousReleaseCommit == null) {
-            throw new IllegalArgumentException(String.format(
-                "Could not resolve release refs to commits. Release '%s' resolved to: %s, Previous '%s' resolved to: %s",
-                releaseRef, releaseCommit, previousReleaseRef, previousReleaseCommit));
+            if (releaseId == null || previousReleaseId == null) {
+                throw new IllegalArgumentException(String.format(
+                    "Could not resolve release refs to commits. Release '%s' resolved to: %s, Previous '%s' resolved to: %s",
+                    releaseRef, releaseId, previousReleaseRef, previousReleaseId));
+            }
+
+            // Peel tags to get their underlying commits
+            RevObject releaseObj = walk.parseAny(releaseId);
+            while (releaseObj instanceof RevTag) {
+                releaseObj = walk.peel(releaseObj);
+            }
+            
+            RevObject previousReleaseObj = walk.parseAny(previousReleaseId);
+            while (previousReleaseObj instanceof RevTag) {
+                previousReleaseObj = walk.peel(previousReleaseObj);
+            }
+
+            if (!(releaseObj instanceof RevCommit) || !(previousReleaseObj instanceof RevCommit)) {
+                throw new IllegalArgumentException(String.format(
+                    "Could not resolve refs to commits. Release '%s' resolved to %s, Previous '%s' resolved to %s",
+                    releaseRef, releaseObj.getClass().getSimpleName(),
+                    previousReleaseRef, previousReleaseObj.getClass().getSimpleName()));
+            }
+
+            RevCommit releaseCommit = (RevCommit) releaseObj;
+            RevCommit previousReleaseCommit = (RevCommit) previousReleaseObj;
+
+            logger.debug("Resolved release '{}' to commit: {}", releaseRef, releaseCommit.getName());
+            logger.debug("Resolved previous release '{}' to commit: {}", previousReleaseRef, previousReleaseCommit.getName());
+
+            Date releaseDate = null;
+            if (releaseCommit != null) {
+                releaseDate = releaseCommit.getAuthorIdent().getWhen();
+            }
+
+            Date fromReleaseDate = null;
+            if (previousReleaseCommit != null) {
+                fromReleaseDate = previousReleaseCommit.getAuthorIdent().getWhen();
+            }
+
+            logger.info("Successfully resolved commits between Previous {} and Release: {}",
+                previousReleaseCommit.getName(), releaseCommit.getName());
+
+            List<PullRequest> pullRequests = githubClient.getPullRequestsBetweenTags(previousReleaseRef, releaseRef);
+
+            // Set release date on each PR
+            for (PullRequest pr : pullRequests) {
+                pr.setReleaseDate(releaseDate);
+            }
+
+            // Sort PRs by merge date
+            pullRequests.sort(Comparator.comparing(PullRequest::getMergedAt));
+
+            // Calculate lead times
+            double[] leadTimes = pullRequests.stream().mapToDouble(PullRequest::getLeadTimeHours).toArray();
+
+            double averageLeadTime = calculateAverage(leadTimes);
+            double medianLeadTime = calculateMedian(leadTimes);
+            double p90LeadTime = calculatePercentile(leadTimes, 90);
+
+            return new ReleaseAnalysis(
+                releaseRef,
+                releaseCommit.getName(),
+                releaseDate,
+                previousReleaseRef,
+                fromReleaseDate,
+                pullRequests,
+                averageLeadTime,
+                medianLeadTime,
+                p90LeadTime
+            );
         }
-
-        logger.debug("Resolved release '{}' to commit: {}", releaseRef, releaseCommit.getName());
-        logger.debug("Resolved previous release '{}' to commit: {}", previousReleaseRef, previousReleaseCommit.getName());
-
-        Date releaseDate = null;
-        RevCommit releaseCommitObj = git.log().add(releaseCommit).setMaxCount(1).call().iterator().next();
-        if (releaseCommitObj != null) {
-            releaseDate = releaseCommitObj.getAuthorIdent().getWhen();
-        }
-
-        Date fromReleaseDate = null;
-        RevCommit fromReleaseCommitObj = git.log().add(previousReleaseCommit).setMaxCount(1).call().iterator().next();
-        if (fromReleaseCommitObj != null) {
-            fromReleaseDate = fromReleaseCommitObj.getAuthorIdent().getWhen();
-        }
-
-        logger.info("Successfully resolved commits between Previous {} and Release: {}",
-            previousReleaseCommit.getName(), releaseCommit.getName());
-
-        List<PullRequest> pullRequests = githubClient.getPullRequestsBetweenTags(previousReleaseRef, releaseRef);
-
-        // Set release date on each PR
-        for (PullRequest pr : pullRequests) {
-            pr.setReleaseDate(releaseDate);
-        }
-
-        // Sort PRs by merge date
-        pullRequests.sort(Comparator.comparing(PullRequest::getMergedAt));
-
-        // Calculate lead times
-        double[] leadTimes = pullRequests.stream().mapToDouble(PullRequest::getLeadTimeHours).toArray();
-
-        double averageLeadTime = calculateAverage(leadTimes);
-        double medianLeadTime = calculateMedian(leadTimes);
-        double p90LeadTime = calculatePercentile(leadTimes, 90);
-
-        return new ReleaseAnalysis(
-            releaseRef,
-            releaseCommit.getName(),
-            releaseDate,
-            previousReleaseRef,
-            fromReleaseDate,
-            pullRequests,
-            averageLeadTime,
-            medianLeadTime,
-            p90LeadTime
-        );
     }
 
     private double calculateAverage(double[] values) {
