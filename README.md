@@ -11,9 +11,11 @@ A tool to analyze lead time for changes in Git repositories by examining pull re
 ## Features
 
 - Analyze lead time for changes between any two Git releases/tags
-- Support for both local Git repositories and GitHub repositories
-- Automatic repository cloning and caching for GitHub repositories
-- Pull request detection from commit messages
+- Enhanced GitHub integration using native GitHub APIs
+- Comprehensive pull request detection that finds:
+  - Pull requests associated with merge commits
+  - Pull requests associated with branch commits
+  - Pull requests associated with any commit in the release
 - Detailed lead time calculation for each pull request
 - Summary statistics for the analyzed time period
 - Debug logging support for detailed analysis
@@ -56,8 +58,8 @@ java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
 
 ### Options
 
-- `-d` or `--directory`: Path to local Git repository
-- `-u` or `--github-url`: GitHub repository URL
+- `-d` or `--directory`: Path to local Git repository (for local analysis only)
+- `-u` or `--github-url`: GitHub repository URL (recommended)
 - `-t` or `--token`: GitHub token (can also be set via `LT4C_GIT_TOKEN` environment variable)
 - `-fr` or `--from-release`: Starting release tag/commit (optional)
 - `-tr` or `--target-release`: Target release tag/commit (required)
@@ -66,23 +68,16 @@ java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
 
 ### Examples
 
-1. Analyze local repository between two releases:
-```bash
-java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
-  --directory /path/to/repo \
-  --from-release v1.0.0 \
-  --target-release v2.0.0
-```
-
-2. Analyze GitHub repository with authentication:
+1. Analyze GitHub repository (recommended method):
 ```bash
 export LT4C_GIT_TOKEN=your_github_token
 java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
   --github-url https://github.com/owner/repo \
+  --from-release v1.0.0 \
   --target-release v2.0.0
 ```
 
-3. Analyze with debug logging enabled:
+2. Analyze with debug logging to see detailed PR detection:
 ```bash
 java -jar target/LT4C-1.1.0-SNAPSHOT-jar-with-dependencies.jar \
   --github-url https://github.com/owner/repo \
@@ -98,7 +93,12 @@ export LOGBACK_LEVEL=DEBUG
 ## Output Format
 
 The tool provides:
-1. Individual lead time for each detected pull request
+1. Individual lead time for each detected pull request, including:
+   - PR number and title
+   - Author
+   - Creation and merge dates
+   - Base branch
+   - Number of lines changed
 2. Summary statistics including:
    - Average lead time
    - Median lead time
