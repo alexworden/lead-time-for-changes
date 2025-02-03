@@ -210,4 +210,11 @@ public class GitHubClient {
         ReleaseLocator locator = new ReleaseLocator(repository);
         return locator.findPreviousReleaseTag(releaseTag);
     }
+
+    /**
+     * Get the GitHub repository instance
+     */
+    public GHRepository getRepository() {
+        return repository;
+    }
 }

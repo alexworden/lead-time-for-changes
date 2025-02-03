@@ -99,7 +99,7 @@ public class PullRequest {
 
     @Override
     public String toString() {
-        return String.format("PR #%d: %s by %s to %s (merged at %s)", 
-            number, title, author, destinationBranch, mergedAt);
+        return String.format("PR #%d: %s by %s to %s (merged at %s, lead time: %.1f hours)", 
+            number, title, author, destinationBranch, mergedAt, getLeadTimeHours());
     }
 }

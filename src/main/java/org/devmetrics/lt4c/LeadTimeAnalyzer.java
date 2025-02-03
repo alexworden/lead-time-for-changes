@@ -1,7 +1,10 @@
 package org.devmetrics.lt4c;
 
+import org.kohsuke.github.GHRef;
+import org.kohsuke.github.GHCommit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.io.IOException;
 import java.util.*;
 
 public class LeadTimeAnalyzer {
@@ -15,8 +18,25 @@ public class LeadTimeAnalyzer {
     public ReleaseAnalysis analyzeRelease(String releaseRef, String previousReleaseRef) throws Exception {
         logger.info("Analyzing release from {} to {}", previousReleaseRef, releaseRef);
         
+        // Get tag dates from GitHub
+        GHRef releaseTag = githubClient.getRepository().getRef("tags/" + releaseRef.replaceFirst("^refs/tags/", ""));
+        GHRef previousReleaseTag = githubClient.getRepository().getRef("tags/" + previousReleaseRef.replaceFirst("^refs/tags/", ""));
+        
+        GHCommit releaseCommit = githubClient.getRepository().getCommit(releaseTag.getObject().getSha());
+        GHCommit previousReleaseCommit = githubClient.getRepository().getCommit(previousReleaseTag.getObject().getSha());
+        
+        Date releaseDate = releaseCommit.getCommitDate();
+        Date fromReleaseDate = previousReleaseCommit.getCommitDate();
+        
+        logger.debug("Release dates - from: {} to: {}", fromReleaseDate, releaseDate);
+        
         List<PullRequest> pullRequests = githubClient.getPullRequestsBetweenTags(previousReleaseRef, releaseRef);
         logger.info("Found {} pull requests", pullRequests.size());
+
+        // Set release date on each PR for lead time calculation
+        for (PullRequest pr : pullRequests) {
+            pr.setReleaseDate(releaseDate);
+        }
 
         // Sort PRs by merge date
         pullRequests.sort(Comparator.comparing(PullRequest::getMergedAt));
@@ -35,10 +55,10 @@ public class LeadTimeAnalyzer {
 
         return new ReleaseAnalysis(
             releaseRef,
-            releaseRef, // Use tag as commit since we don't need the actual commit hash
-            new Date(), // Current time as release date since we don't need exact timestamp
+            releaseTag.getObject().getSha(),
+            releaseDate,
             previousReleaseRef,
-            null, // We don't need the exact from release date
+            fromReleaseDate,
             pullRequests,
             averageLeadTime,
             medianLeadTime,
