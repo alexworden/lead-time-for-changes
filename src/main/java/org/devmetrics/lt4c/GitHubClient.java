@@ -72,6 +72,7 @@ public class GitHubClient {
             // First collect all commits we need to process
             logger.info("Found {} commits between tags, collecting branch commits...", compare.getCommits().length);
             for (GHCommit commit : compare.getCommits()) {
+                logger.info("Fetching commit {}", commit.getSHA1());
                 if (processedCommits.contains(commit.getSHA1())) {
                     continue;
                 }
@@ -80,6 +81,7 @@ public class GitHubClient {
                 if (commit.getParents().size() > 1) {  // This is a merge commit
                     // Get the source branch commit (second parent in a merge)
                     String sourceBranchCommit = commit.getParents().get(1).getSHA1();
+                    logger.info("  This is a merge commit, fetching source branch commit...");
                     if (!processedCommits.contains(sourceBranchCommit)) {
                         commitsToProcess.add(sourceBranchCommit);
                         collectBranchCommits(sourceBranchCommit, fromTag, processedCommits, commitsToProcess);
@@ -162,7 +164,12 @@ public class GitHubClient {
             }
             processedCommits.add(commit.getSHA1());
             commitsToProcess.add(commit.getSHA1());
-            logger.debug("Processing branch commit {}", commit.getSHA1());
+            
+            // Try to get branch name from associated PR
+            List<GHPullRequest> prs = commit.listPullRequests().toList();
+            String branchInfo = prs.isEmpty() ? "unknown branch" : 
+                String.format("branch '%s' (PR #%d)", prs.get(0).getHead().getRef(), prs.get(0).getNumber());
+            logger.info("    Processing commit {} from {}", commit.getSHA1().substring(0, 8), branchInfo);
             
             // For merge commits, recursively process the source branch
             if (commit.getParents().size() > 1) {
