@@ -1,33 +1,18 @@
 package org.devmetrics.lt4c;
 
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.lib.ObjectId;
-import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.revwalk.RevCommit;
-import org.eclipse.jgit.revwalk.RevObject;
-import org.eclipse.jgit.revwalk.RevTag;
-import org.eclipse.jgit.revwalk.RevWalk;
 import org.kohsuke.github.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.*;
 
 public class GitHubClient {
     private static final Logger logger = LoggerFactory.getLogger(GitHubClient.class);
     private final GitHub github;
     private final GHRepository repository;
-    private final Repository gitRepo;
-    private final Git git;
 
-    public GitHubClient(String token, String repoUrl, File repoDir) throws IOException {
+    public GitHubClient(String token, String repoUrl) throws IOException {
         // Parse the GitHub host from the URL
         String githubHost;
         String repoPath;
@@ -66,187 +51,155 @@ public class GitHubClient {
         
         repository = github.getRepository(repoPath);
         logger.debug("Successfully connected to repository");
-        
-        // Initialize JGit
-        git = Git.open(repoDir);
-        gitRepo = git.getRepository();
     }
 
+    /**
+     * Get pull requests between two tags
+     */
     public List<PullRequest> getPullRequestsBetweenTags(String fromTag, String toTag) throws IOException {
         List<PullRequest> pullRequests = new ArrayList<>();
+        Set<String> processedPRs = new HashSet<>();
+        Set<String> processedCommits = new HashSet<>();
+        List<String> commitsToProcess = new ArrayList<>();
         
-        logger.info("Identifying pull requests between tags {} and {}", fromTag, toTag);
-        
-        try (RevWalk walk = new RevWalk(gitRepo)) {
-            // Get the commit objects from the local repository
-            ObjectId fromId = gitRepo.resolve(fromTag);
-            ObjectId toId = gitRepo.resolve(toTag);
+        try {
+            logger.info("Comparing tags {} to {}", fromTag, toTag);
+            long startTime = System.currentTimeMillis();
             
-            if (fromId == null || toId == null) {
-                throw new IllegalArgumentException(String.format(
-                    "Could not resolve tags. From tag '%s' resolved to: %s, To tag '%s' resolved to: %s",
-                    fromTag, fromId, toTag, toId));
-            }
+            // Get the comparison between tags
+            GHCompare compare = repository.getCompare(fromTag, toTag);
             
-            // Peel tags to get their underlying commits
-            RevObject fromObj = walk.parseAny(fromId);
-            while (fromObj instanceof RevTag) {
-                fromObj = walk.peel(fromObj);
-            }
-            
-            RevObject toObj = walk.parseAny(toId);
-            while (toObj instanceof RevTag) {
-                toObj = walk.peel(toObj);
-            }
-            
-            if (!(fromObj instanceof RevCommit) || !(toObj instanceof RevCommit)) {
-                throw new IllegalArgumentException(String.format(
-                    "Could not resolve tags to commits. From tag '%s' resolved to %s, To tag '%s' resolved to %s",
-                    fromTag, fromObj.getClass().getSimpleName(),
-                    toTag, toObj.getClass().getSimpleName()));
-            }
-            
-            RevCommit fromCommit = (RevCommit) fromObj;
-            RevCommit toCommit = (RevCommit) toObj;
-            
-            logger.debug("Resolved from tag '{}' to commit: {}", fromTag, fromCommit.getName());
-            logger.debug("Resolved to tag '{}' to commit: {}", toTag, toCommit.getName());
-            
-            // Use JGit to get all non-merge commits
-            Iterable<RevCommit> commits = git.log()
-                .add(toCommit)
-                .not(fromCommit)
-                .call();
-            
-            // For each commit, try to find its associated PR
-            for (RevCommit commit : commits) {
-                if (commit.getParentCount() <= 1) { // Skip merge commits
-                    String message = commit.getFullMessage();
-                    try {
-                        String prNumber = extractPRNumber(message);
-                        
-                        if (prNumber != null) {
-                            logger.debug("Found PR number {} in commit {} with message: {}", prNumber, commit.getName(), message);
-                            try {
-                                GHPullRequest ghPr = getPullRequestWithRetry(Integer.parseInt(prNumber));
-                                if (ghPr != null && ghPr.isMerged()) {
-                                    logger.debug("Found PR #{}: {}", ghPr.getNumber(), ghPr.getTitle());
-                                    PullRequest pr = createPullRequest(ghPr);
-                                    pullRequests.add(pr);
-                                } else {
-                                    logger.debug("PR #{} not found or not merged", prNumber);
-                                }
-                            } catch (Exception e) {
-                                logger.error("Failed to get PR details for PR#{} for commit {}", prNumber, commit.getName(), e);
-                            }
-                        } else {
-                            logger.debug("No PR number found in commit {} with message: {}", commit.getName(), message);
-                        }
-                    } catch (Exception e) {
-                        logger.error("Failed to process commit {}", commit.getName(), e);
+            // First collect all commits we need to process
+            logger.info("Found {} commits between tags, collecting branch commits...", compare.getCommits().length);
+            for (GHCommit commit : compare.getCommits()) {
+                if (processedCommits.contains(commit.getSHA1())) {
+                    continue;
+                }
+                processedCommits.add(commit.getSHA1());
+                
+                if (commit.getParents().size() > 1) {  // This is a merge commit
+                    // Get the source branch commit (second parent in a merge)
+                    String sourceBranchCommit = commit.getParents().get(1).getSHA1();
+                    if (!processedCommits.contains(sourceBranchCommit)) {
+                        commitsToProcess.add(sourceBranchCommit);
+                        collectBranchCommits(sourceBranchCommit, fromTag, processedCommits, commitsToProcess);
                     }
+                } else {
+                    commitsToProcess.add(commit.getSHA1());
                 }
             }
-        } catch (GitAPIException e) {
-            throw new IOException("Failed to get commits: " + e.getMessage(), e);
+            
+            long commitCollectionTime = System.currentTimeMillis();
+            logger.info("Collected {} unique commits in {}ms", commitsToProcess.size(), 
+                       commitCollectionTime - startTime);
+            
+            // Now find PRs for all commits in one pass
+            findPullRequestsForCommits(commitsToProcess, processedPRs, pullRequests);
+            
+            long endTime = System.currentTimeMillis();
+            logger.info("Total processing time: {}ms (commit collection: {}ms, PR matching: {}ms)", 
+                       endTime - startTime,
+                       commitCollectionTime - startTime,
+                       endTime - commitCollectionTime);
+            
+            return pullRequests;
+            
+        } catch (GHFileNotFoundException e) {
+            throw new IOException("Could not compare tags. Please ensure both tags exist and are accessible.", e);
+        } catch (Exception e) {
+            throw new IOException("Error retrieving pull requests between tags: " + e.getMessage(), e);
         }
-        
-        logger.info("Found {} pull requests", pullRequests.size());
-        return pullRequests;
     }
     
-    private String extractPRNumber(String message) {
-        // Common PR reference patterns
-        String[] patterns = {
-            "\\(#(\\d+)\\)",                   // (#1234)
-            "Merge pull request #(\\d+)"      // Merge pull request #1234
-        };
+    /**
+     * Find pull requests associated with a list of commits using the GitHub API
+     */
+    private void findPullRequestsForCommits(List<String> commits, Set<String> processedPRs, List<PullRequest> pullRequests) throws IOException {
+        logger.info("Finding PRs for {} commits", commits.size());
+        long startTime = System.currentTimeMillis();
+        int prCount = 0;
         
-        for (String pattern : patterns) {
-            Pattern p = Pattern.compile(pattern);
-            Matcher m = p.matcher(message);
-            if (m.find()) {
-                String prNumber = m.group(1);
-                logger.debug("Found PR number {} using pattern: {}", prNumber, pattern);
-                return prNumber;
+        for (String commitSha : commits) {
+            logger.debug("Checking for PRs associated with commit {}", commitSha);
+            try {
+                List<GHPullRequest> prs = repository.getCommit(commitSha).listPullRequests().toList();
+                if (prs == null || prs.isEmpty()) {
+                    logger.debug("No PRs found for commit {}", commitSha);
+                    continue;
+                }
+                for (GHPullRequest pr : prs) {
+                    if (!pr.isMerged() || processedPRs.contains(String.valueOf(pr.getNumber()))) {
+                        logger.debug("PR #{} is not merged or already processed, skipping", pr.getNumber());
+                        continue;
+                    }
+                    
+                    processedPRs.add(String.valueOf(pr.getNumber()));
+                    pullRequests.add(createPullRequest(pr));
+                    prCount++;
+                    logger.debug("Found PR #{} associated with commit {}", pr.getNumber(), commitSha);
+                }
+            } catch (GHFileNotFoundException e) {
+                // Commit might not exist or be accessible
+                logger.warn("Could not find commit {} or its associated PRs: {}", commitSha, e.getMessage());
             }
         }
         
-        return null;
+        long endTime = System.currentTimeMillis();
+        logger.info("Found {} PRs in {}ms", prCount, endTime - startTime);
     }
-
-    private GHPullRequest getPullRequestWithRetry(int prNumber) {
-        int maxRetries = 3;
-        int retryDelayMs = 1000;
-        
-        for (int i = 0; i < maxRetries; i++) {
-            try {
-                logger.trace("Attempting to get PR #{} (attempt {}/{})", prNumber, i + 1, maxRetries);
-                GHPullRequest pr = repository.getPullRequest(prNumber);
-                logger.debug("Successfully retrieved PR #{}", prNumber);
-                return pr;
-            } catch (IOException e) {
-                String message = e.getMessage();
-                if (message != null) {
-                    if (message.contains("\"message\":\"Not Found\"")) {
-                        // PR not found, no need to retry
-                        logger.trace("PR #{} not found", prNumber);
-                        return null;
-                    } else if (message.contains("\"message\":\"API rate limit exceeded\"") || 
-                             message.contains("403") || 
-                             message.contains("rate limit")) {
-                        // Rate limited, wait and retry
-                        logger.warn("Rate limited while getting PR #{}, waiting {}ms before retry {}/{}",
-                                prNumber, retryDelayMs, i + 1, maxRetries);
-                        try {
-                            Thread.sleep(retryDelayMs);
-                            retryDelayMs *= 2; // Exponential backoff
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            return null;
-                        }
-                    } else {
-                        // Other error, log and continue
-                        logger.trace("Error getting PR #{}: {}", prNumber, message);
-                        if (i < maxRetries - 1) {
-                            try {
-                                Thread.sleep(retryDelayMs);
-                            } catch (InterruptedException ie) {
-                                Thread.currentThread().interrupt();
-                                return null;
-                            }
-                        } else {
-                            return null;
-                        }
-                    }
+    
+    /**
+     * Recursively collect commits from a source branch
+     */
+    private void collectBranchCommits(String startCommit, String stopAtTag, 
+                                    Set<String> processedCommits, List<String> commitsToProcess) throws IOException {
+        try {
+            GHCommit commit = repository.getCommit(startCommit);
+            
+            // Stop if we've hit the from tag or already processed this commit
+            if (processedCommits.contains(commit.getSHA1())) {
+                return;
+            }
+            processedCommits.add(commit.getSHA1());
+            commitsToProcess.add(commit.getSHA1());
+            logger.debug("Processing branch commit {}", commit.getSHA1());
+            
+            // For merge commits, recursively process the source branch
+            if (commit.getParents().size() > 1) {
+                String sourceBranchCommit = commit.getParents().get(1).getSHA1();
+                if (!processedCommits.contains(sourceBranchCommit)) {
+                    commitsToProcess.add(sourceBranchCommit);
+                    collectBranchCommits(sourceBranchCommit, stopAtTag, processedCommits, commitsToProcess);
                 }
             }
+            
+            // Continue with the first parent (main branch line)
+            if (!commit.getParents().isEmpty()) {
+                String parentCommit = commit.getParents().get(0).getSHA1();
+                if (!processedCommits.contains(parentCommit)) {
+                    collectBranchCommits(parentCommit, stopAtTag, processedCommits, commitsToProcess);
+                }
+            }
+        } catch (GHFileNotFoundException e) {
+            // Stop processing if we can't find the commit (likely hit the repository boundary)
+            logger.debug("Reached repository boundary at commit {}", startCommit);
         }
-        
-        logger.debug("Failed to get PR #{} after {} retries", prNumber, maxRetries);
-        return null;
     }
 
-    private void populateLineChanges(PullRequest pr, GHPullRequest ghPr) throws IOException {
-        int additions = ghPr.getAdditions();
-        int deletions = ghPr.getDeletions();
-        // For modified lines, we'll use the number of changed files as a proxy since GitHub API
-        // doesn't directly provide modified line count
-        int modified = ghPr.getChangedFiles();
-        pr.setLineChanges(additions, deletions, modified);
-    }
-
+    /**
+     * Create a PullRequest object from a GitHub pull request
+     */
     private PullRequest createPullRequest(GHPullRequest ghPr) throws IOException {
-        PullRequest pr = new PullRequest(
+        return new PullRequest(
             ghPr.getNumber(),
+            ghPr.getTitle(),
             ghPr.getUser().getLogin(),
-            ghPr.getCreatedAt(),
-            ghPr.getMergedAt(),
             ghPr.getBase().getRef(),
             ghPr.getMergeCommitSha(),
-            ghPr.getTitle()
+            ghPr.getCreatedAt(),
+            ghPr.getMergedAt(),
+            ghPr.getAdditions(),
+            ghPr.getDeletions()
         );
-        populateLineChanges(pr, ghPr);
-        return pr;
     }
 }
