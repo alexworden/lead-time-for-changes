@@ -76,33 +76,20 @@ public class GitHubClient {
                 if (processedCommits.contains(commit.getSHA1())) {
                     continue;
                 }
-                processedCommits.add(commit.getSHA1());
-                
-                if (commit.getParents().size() > 1) {  // This is a merge commit
-                    // Get the source branch commit (second parent in a merge)
-                    String sourceBranchCommit = commit.getParents().get(1).getSHA1();
-                    logger.info("  This is a merge commit, fetching source branch commit...");
-                    if (!processedCommits.contains(sourceBranchCommit)) {
-                        commitsToProcess.add(sourceBranchCommit);
-                        collectBranchCommits(sourceBranchCommit, fromTag, processedCommits, commitsToProcess);
-                    }
-                } else {
-                    commitsToProcess.add(commit.getSHA1());
-                }
+                processCommitAndParents(commit, fromTag, processedCommits, commitsToProcess, 0, 3);
             }
             
             long commitCollectionTime = System.currentTimeMillis();
-            logger.info("Collected {} unique commits in {}ms", commitsToProcess.size(), 
-                       commitCollectionTime - startTime);
+            logger.info("Collected {} unique commits in {}", commitsToProcess.size(), formatDuration(commitCollectionTime - startTime));
             
             // Now find PRs for all commits in one pass
             findPullRequestsForCommits(commitsToProcess, processedPRs, pullRequests);
             
             long endTime = System.currentTimeMillis();
-            logger.info("Total processing time: {}ms (commit collection: {}ms, PR matching: {}ms)", 
-                       endTime - startTime,
-                       commitCollectionTime - startTime,
-                       endTime - commitCollectionTime);
+            logger.info("Total processing time: {} (commit collection: {}, PR matching: {})", 
+                       formatDuration(endTime - startTime),
+                       formatDuration(commitCollectionTime - startTime),
+                       formatDuration(endTime - commitCollectionTime));
             
             return pullRequests;
             
@@ -147,50 +134,83 @@ public class GitHubClient {
         }
         
         long endTime = System.currentTimeMillis();
-        logger.info("Found {} PRs in {}ms", prCount, endTime - startTime);
+        logger.info("Found {} PRs in {}", prCount, formatDuration(endTime - startTime));
     }
     
     /**
-     * Recursively collect commits from a source branch
+     * Recursively collect commits from a source branch, with a limit on recursion depth
+     * @param commit The commit to start processing from
+     * @param stopAtTag The tag to stop processing at
+     * @param processedCommits Set of already processed commit SHAs
+     * @param commitsToProcess List to add new commit SHAs to
+     * @param currentDepth Current recursion depth
+     * @param maxDepth Maximum recursion depth to prevent infinite loops
      */
-    private void collectBranchCommits(String startCommit, String stopAtTag, 
-                                    Set<String> processedCommits, List<String> commitsToProcess) throws IOException {
+    private void processCommitAndParents(GHCommit commit, String stopAtTag, 
+                                    Set<String> processedCommits, List<String> commitsToProcess,
+                                    int currentDepth, int maxDepth) throws IOException {
         try {
-            GHCommit commit = repository.getCommit(startCommit);
-            
-            // Stop if we've hit the from tag or already processed this commit
+            // Stop if we've hit the recursion limit
+            if (currentDepth >= maxDepth) {
+                logger.debug("{} Reached maximum recursion depth ({}) at commit {}", 
+                    getDepthPrefix(currentDepth), maxDepth, commit.getSHA1());
+                return;
+            }
+
+            // Stop if we've already processed this commit
             if (processedCommits.contains(commit.getSHA1())) {
                 return;
             }
+
             processedCommits.add(commit.getSHA1());
             commitsToProcess.add(commit.getSHA1());
             
-            // Try to get branch name from associated PR
-            List<GHPullRequest> prs = commit.listPullRequests().toList();
-            String branchInfo = prs.isEmpty() ? "unknown branch" : 
-                String.format("branch '%s' (PR #%d)", prs.get(0).getHead().getRef(), prs.get(0).getNumber());
-            logger.info("    Processing commit {} from {}", commit.getSHA1().substring(0, 8), branchInfo);
-            
-            // For merge commits, recursively process the source branch
-            if (commit.getParents().size() > 1) {
-                String sourceBranchCommit = commit.getParents().get(1).getSHA1();
-                if (!processedCommits.contains(sourceBranchCommit)) {
-                    commitsToProcess.add(sourceBranchCommit);
-                    collectBranchCommits(sourceBranchCommit, stopAtTag, processedCommits, commitsToProcess);
+            // Get parents
+            List<GHCommit> parents = commit.getParents();
+            if (parents.isEmpty()) {
+                return;
+            }
+
+            // For merge commits, recursively process the source branch (second parent)
+            if (parents.size() > 1) {
+                GHCommit sourceBranchCommit = parents.get(1);
+
+                if (logger.isDebugEnabled()) {
+                    // Try to get branch name from associated PR
+                    List<GHPullRequest> prs = sourceBranchCommit.listPullRequests().toList();
+                    String branchInfo = prs.isEmpty() ? "unknown branch" : 
+                        String.format("branch '%s' (PR #%d)", prs.get(0).getHead().getRef(), prs.get(0).getNumber());
+                    logger.debug("{} Processing commit {} from {} (depth: {})", 
+                        getDepthPrefix(currentDepth), sourceBranchCommit.getSHA1().substring(0, 8), 
+                        branchInfo, currentDepth);
+                }
+                if (!processedCommits.contains(sourceBranchCommit.getSHA1())) {
+                    processCommitAndParents(sourceBranchCommit, stopAtTag, 
+                        processedCommits, commitsToProcess, currentDepth + 1, maxDepth);
                 }
             }
             
             // Continue with the first parent (main branch line)
-            if (!commit.getParents().isEmpty()) {
-                String parentCommit = commit.getParents().get(0).getSHA1();
-                if (!processedCommits.contains(parentCommit)) {
-                    collectBranchCommits(parentCommit, stopAtTag, processedCommits, commitsToProcess);
-                }
+            GHCommit parentCommit = parents.get(0);
+            if (!processedCommits.contains(parentCommit.getSHA1())) {
+                processCommitAndParents(parentCommit, stopAtTag, 
+                    processedCommits, commitsToProcess, currentDepth + 1, maxDepth);
             }
         } catch (GHFileNotFoundException e) {
             // Stop processing if we can't find the commit (likely hit the repository boundary)
-            logger.debug("Reached repository boundary at commit {}", startCommit);
+            logger.debug("{} Reached repository boundary at commit {}", 
+                getDepthPrefix(currentDepth), commit.getSHA1());
         }
+    }
+
+    /**
+     * Get a prefix string of '>' characters based on the current depth
+     * @param depth Current recursion depth
+     * @return String of '>' characters, two per depth level
+     */
+    private String getDepthPrefix(int depth) {
+        if (depth <= 0) return "";
+        return ">".repeat(depth * 2);
     }
 
     /**
@@ -223,5 +243,33 @@ public class GitHubClient {
      */
     public GHRepository getRepository() {
         return repository;
+    }
+
+    /**
+     * Format a duration in milliseconds to a human-readable string
+     * @param durationMs Duration in milliseconds
+     * @return Formatted string like "2m 30s" or "500ms"
+     */
+    private String formatDuration(long durationMs) {
+        if (durationMs < 1000) {
+            return durationMs + "ms";
+        }
+        
+        StringBuilder result = new StringBuilder();
+        long minutes = durationMs / (60 * 1000);
+        long seconds = (durationMs % (60 * 1000)) / 1000;
+        long remainingMs = durationMs % 1000;
+        
+        if (minutes > 0) {
+            result.append(minutes).append("m ");
+        }
+        if (seconds > 0 || minutes > 0) {
+            result.append(seconds).append("s");
+            if (remainingMs > 0) {
+                result.append(" ").append(remainingMs).append("ms");
+            }
+        }
+        
+        return result.toString();
     }
 }
