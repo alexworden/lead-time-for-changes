@@ -167,15 +167,24 @@ public class CLI {
             
             if (url != null) {
                 try {
-                    logger.debug("Initializing GitHub client with URL: {} and token: {}", url, token != null ? "present" : "missing");
-                    GitHubClient githubClient = new GitHubClient(token, url, repoDir);
+                    GitHubClient githubClient = createGitHubClient(token, url);
                     analyzer.setGitHubClient(githubClient);
-                    logger.debug("GitHub client initialized successfully");
                 } catch (IOException e) {
                     logger.debug("Failed to initialize GitHub client", e);
                     System.err.println("Warning: Failed to initialize GitHub client. Falling back to git log analysis: " + e.getMessage());
                 }
             }
+        }
+    }
+
+    private static GitHubClient createGitHubClient(String token, String repoUrl) throws IOException {
+        try {
+            GitHubClient githubClient = new GitHubClient(token, repoUrl);
+            logger.info("Successfully connected to GitHub");
+            return githubClient;
+        } catch (IOException e) {
+            logger.error("Failed to connect to GitHub: {}", e.getMessage());
+            throw e;
         }
     }
 
@@ -241,7 +250,7 @@ public class CLI {
 
         // Print individual PR details
         for (PullRequest pr : analysis.getPullRequests()) {
-            System.out.println(pr.toString());
+            outputPullRequestDetails(pr);
         }
 
         System.out.println("\nSummary:");
@@ -262,6 +271,13 @@ public class CLI {
             analysis.getP90LeadTimeHours(), 
             analysis.getP90LeadTimeHours() / 24.0);
 
+        // Line Changes
+        System.out.println("\nLine Changes:");
+        System.out.printf("  * Added: %,d lines%n", analysis.getTotalLinesAdded());
+        System.out.printf("  * Deleted: %,d lines%n", analysis.getTotalLinesDeleted());
+        System.out.printf("  * Total Changes: %,d lines%n", analysis.getTotalLinesChanged());
+        System.out.printf("  * Average Changes per PR: %.2f lines%n", analysis.getAverageLinesChanged());
+
         // Lead Time Distribution
         int fastCount = 0, mediumCount = 0, slowCount = 0;
         for (PullRequest pr : analysis.getPullRequests()) {
@@ -279,11 +295,15 @@ public class CLI {
             mediumCount, (mediumCount * 100.0) / total);
         System.out.printf("  * Slow (> 72 hours): %d PRs (%.1f%%)%n", 
             slowCount, (slowCount * 100.0) / total);
+    }
 
-        System.out.println("\n- Line Change Statistics:");
-        System.out.printf("  * Added: %,d lines%n", analysis.getTotalLinesAdded());
-        System.out.printf("  * Deleted: %,d lines%n", analysis.getTotalLinesDeleted());
-        System.out.printf("  * Modified: %,d lines%n", analysis.getTotalLinesModified());
-        System.out.printf("  * Total Changes: %,d lines%n", analysis.getTotalLinesChanged());
+    private static void outputPullRequestDetails(PullRequest pr) {
+        System.out.printf("PR #%d: %s%n", pr.getNumber(), pr.getTitle());
+        System.out.printf("  Author: %s%n", pr.getAuthor());
+        System.out.printf("  Target Branch: %s%n", pr.getDestinationBranch());
+        System.out.printf("  Created: %s%n", pr.getCreatedAt());
+        System.out.printf("  Merged: %s%n", pr.getMergedAt());
+        System.out.printf("  Changes: +%d -%d lines%n", pr.getAdditions(), pr.getDeletions());
+        System.out.printf("  Total Changes: %d lines%n", pr.getTotalChanges());
     }
 }

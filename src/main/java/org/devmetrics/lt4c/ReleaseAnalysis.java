@@ -70,64 +70,47 @@ public class ReleaseAnalysis {
         return p90LeadTimeHours;
     }
 
+    public int getTotalPullRequests() {
+        return pullRequests.size();
+    }
+
     public int getTotalLinesAdded() {
-        return pullRequests.stream().mapToInt(PullRequest::getLinesAdded).sum();
+        return pullRequests.stream()
+            .mapToInt(PullRequest::getAdditions)
+            .sum();
     }
 
     public int getTotalLinesDeleted() {
-        return pullRequests.stream().mapToInt(PullRequest::getLinesDeleted).sum();
-    }
-
-    public int getTotalLinesModified() {
-        return pullRequests.stream().mapToInt(PullRequest::getLinesModified).sum();
+        return pullRequests.stream()
+            .mapToInt(PullRequest::getDeletions)
+            .sum();
     }
 
     public int getTotalLinesChanged() {
-        return pullRequests.stream().mapToInt(PullRequest::getTotalLinesChanged).sum();
+        return pullRequests.stream()
+            .mapToInt(PullRequest::getTotalChanges)
+            .sum();
+    }
+
+    public double getAverageLinesChanged() {
+        if (pullRequests.isEmpty()) {
+            return 0.0;
+        }
+        return getTotalLinesChanged() / (double) pullRequests.size();
     }
 
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("Release Analysis for %s (commit: %s)\n", releaseTag, releaseCommit));
-        sb.append("\nPull Requests:\n");
-        for (PullRequest pr : pullRequests) {
-            sb.append(pr.toString()).append("\n");
-        }
-
-        sb.append("\nSummary:\n");
-        sb.append("==========\n");
-        sb.append(String.format("- Release %s was made on %s\n", releaseTag, DATE_FORMAT.format(releaseDate)));
-        sb.append(String.format("- Included %d pull requests\n", pullRequests.size()));
-        sb.append(String.format("- Lead Time Metrics:\n"));
-        sb.append(String.format("  * Average: %.1f hours (%.1f days)\n", averageLeadTimeHours, averageLeadTimeHours/24));
-        sb.append(String.format("  * Median: %.1f hours (%.1f days)\n", medianLeadTimeHours, medianLeadTimeHours/24));
-        sb.append(String.format("  * 90th percentile: %.1f hours (%.1f days)\n", p90LeadTimeHours, p90LeadTimeHours/24));
-        
-        // Add distribution summary
-        int fastPRs = 0; // < 24 hours
-        int mediumPRs = 0; // 24-72 hours
-        int slowPRs = 0; // > 72 hours
-        
-        for (PullRequest pr : pullRequests) {
-            double leadTime = pr.getLeadTimeHours();
-            if (leadTime < 24) {
-                fastPRs++;
-            } else if (leadTime < 72) {
-                mediumPRs++;
-            } else {
-                slowPRs++;
-            }
-        }
-        
-        sb.append("\n- Lead Time Distribution:\n");
-        sb.append(String.format("  * Fast (< 24 hours): %d PRs (%.1f%%)\n", 
-            fastPRs, (fastPRs * 100.0 / pullRequests.size())));
-        sb.append(String.format("  * Medium (24-72 hours): %d PRs (%.1f%%)\n", 
-            mediumPRs, (mediumPRs * 100.0 / pullRequests.size())));
-        sb.append(String.format("  * Slow (> 72 hours): %d PRs (%.1f%%)\n", 
-            slowPRs, (slowPRs * 100.0 / pullRequests.size())));
-
+        sb.append(String.format("Release Analysis for %s%n", releaseTag));
+        sb.append(String.format("From: %s%n", fromReleaseTag));
+        sb.append(String.format("Number of PRs: %d%n", getTotalPullRequests()));
+        sb.append(String.format("Average Lead Time: %.2f hours%n", averageLeadTimeHours));
+        sb.append(String.format("Median Lead Time: %.2f hours%n", medianLeadTimeHours));
+        sb.append(String.format("90th Percentile Lead Time: %.2f hours%n", p90LeadTimeHours));
+        sb.append(String.format("Total Lines Changed: %d (+%d -%d)%n", 
+            getTotalLinesChanged(), getTotalLinesAdded(), getTotalLinesDeleted()));
+        sb.append(String.format("Average Lines per PR: %.2f%n", getAverageLinesChanged()));
         return sb.toString();
     }
 }
