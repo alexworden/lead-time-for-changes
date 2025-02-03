@@ -202,4 +202,12 @@ public class GitHubClient {
             ghPr.getDeletions()
         );
     }
+
+    /**
+     * Find the previous release tag for a given tag
+     */
+    public String findPreviousReleaseTag(String releaseTag) throws IOException {
+        ReleaseLocator locator = new ReleaseLocator(repository);
+        return locator.findPreviousReleaseTag(releaseTag);
+    }
 }

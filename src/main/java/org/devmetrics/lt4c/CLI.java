@@ -1,34 +1,22 @@
 package org.devmetrics.lt4c;
 
 import org.apache.commons.cli.*;
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.transport.TagOpt;
-import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
-import java.io.File;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
 
 public class CLI {
     private static final Logger logger = LoggerFactory.getLogger(CLI.class);
-    private static final String DEFAULT_CACHE_DIR = System.getProperty("user.home") + "/.leadtime/repos";
 
     public static void main(String[] args) {
         Options options = new Options();
-
-        options.addOption(Option.builder("d")
-                .longOpt("directory")
-                .desc("Git repository directory")
-                .hasArg()
-                .build());
 
         options.addOption(Option.builder("u")
                 .longOpt("github-url")
                 .desc("GitHub repository URL")
                 .hasArg()
+                .required()
                 .build());
 
         options.addOption(Option.builder("t")
@@ -50,12 +38,6 @@ public class CLI {
                 .required()
                 .build());
 
-        options.addOption(Option.builder("l")
-                .longOpt("limit")
-                .desc("Limit number of releases to analyze")
-                .hasArg()
-                .build());
-
         options.addOption(Option.builder("g")
                 .longOpt("debug")
                 .desc("Enable debug logging")
@@ -66,76 +48,37 @@ public class CLI {
 
         try {
             CommandLine cmd = parser.parse(options, args);
-            String directory = cmd.getOptionValue("directory");
             String githubUrl = cmd.getOptionValue("github-url");
             String token = cmd.getOptionValue("token", System.getenv("LT4C_GIT_TOKEN"));
             String fromRelease = cmd.getOptionValue("from-release");
             String targetRelease = cmd.getOptionValue("target-release");
+            
+            if (token == null) {
+                throw new ParseException("GitHub token must be provided via --token or LT4C_GIT_TOKEN environment variable");
+            }
             
             // Set logging level based on debug flag
             if (cmd.hasOption("debug")) {
                 Logger logger = LoggerFactory.getLogger("org.devmetrics");
                 if (logger instanceof ch.qos.logback.classic.Logger) {
                     ((ch.qos.logback.classic.Logger) logger).setLevel(Level.TRACE);
-                } else {
-                    System.err.println("Warning: Unable to set log level - not using Logback implementation");
                 }
             }
 
-            File repoDir;
-            if (githubUrl != null) {
-                repoDir = getOrCreateGitRepo(githubUrl, token);
-            } else if (directory != null) {
-                repoDir = new File(directory);
-                try {
-                    // Try to open the Git repository to validate it
-                    Git git = Git.open(repoDir);
-                    
-                    // Try to fetch tags if we have a token
-                    if (token != null) {
-                        logger.debug("Attempting to fetch tags for local repository: {}", repoDir);
-                        try {
-                            git.fetch()
-                                .setRefSpecs("+refs/tags/*:refs/tags/*")
-                                .setTagOpt(TagOpt.FETCH_TAGS)
-                                .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
-                                .call();
-                            logger.debug("Tags fetched successfully");
-                        } catch (GitAPIException e) {
-                            logger.warn("Failed to fetch tags: {}. Will use local tags only.", e.getMessage());
-                        }
-                    } else {
-                        logger.info("No GitHub token provided, will use local tags only");
-                    }
-                    git.close();
-                } catch (Exception e) {
-                    throw new ParseException("Invalid Git repository directory: " + directory + " - " + e.getMessage());
-                }
-            } else {
-                throw new ParseException("Either --directory or --github-url must be specified");
-            }
-
-            // Initialize the analyzer
-            LeadTimeAnalyzer analyzer = new LeadTimeAnalyzer(repoDir);
+            // Initialize GitHub client
+            GitHubClient githubClient = createGitHubClient(token, githubUrl);
             
-            setupGithubClient(githubUrl, token, repoDir, analyzer);
+            // Initialize the analyzer with GitHub client
+            LeadTimeAnalyzer analyzer = new LeadTimeAnalyzer(githubClient);
 
+            // If no from-release specified, find the previous release
             if (fromRelease == null) {
                 logger.info("No --from-release specified, finding previous tag before target release: {}", targetRelease);
-                // Open git repository to find previous tag
-                Git git = Git.open(repoDir);
-                try {
-                    // Find the previous release tag
-                    ReleaseLocator locator = new ReleaseLocator(git);
-                    String previousTag = locator.findPreviousReleaseTag(targetRelease);
-                    logger.info("Found previous tag for {} is tag: {}", targetRelease, previousTag);
-                    fromRelease = previousTag;
-                } finally {
-                    git.close();
-                }            
+                fromRelease = githubClient.findPreviousReleaseTag(targetRelease);
                 if (fromRelease == null) {
                     throw new Exception("Could not find previous release tag before target release: " + targetRelease);
                 }
+                logger.info("Found previous tag: {}", fromRelease);
             }
 
             // Analyze the release
@@ -145,9 +88,8 @@ public class CLI {
         } catch (ParseException e) {
             System.err.println("Error: " + e.getMessage());
             formatter.printHelp("lt4c", 
-                "\nAnalyze lead time for changes between releases in a Git repository.\n\n" +
-                "Examples:\n" +
-                "  lt4c --directory /path/to/repo --target-release v1.0.0\n" +
+                "\nAnalyze lead time for changes between releases in a GitHub repository.\n\n" +
+                "Example:\n" +
                 "  lt4c --github-url https://github.com/org/repo --target-release v1.0.0 --from-release v0.9.0\n\n",
                 options,
                 "\nNote: If --from-release is not specified, the previous release tag will be automatically detected.",
@@ -157,23 +99,6 @@ public class CLI {
             System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
-        }
-    }
-
-    private static void setupGithubClient(String githubUrl, String token, File repoDir, LeadTimeAnalyzer analyzer) {
-        // Set up GitHub client if we have a token
-        if (token != null) {
-            String url = githubUrl != null ? githubUrl : getGitHubUrl(repoDir);
-            
-            if (url != null) {
-                try {
-                    GitHubClient githubClient = createGitHubClient(token, url);
-                    analyzer.setGitHubClient(githubClient);
-                } catch (IOException e) {
-                    logger.debug("Failed to initialize GitHub client", e);
-                    System.err.println("Warning: Failed to initialize GitHub client. Falling back to git log analysis: " + e.getMessage());
-                }
-            }
         }
     }
 
@@ -188,66 +113,7 @@ public class CLI {
         }
     }
 
-    private static String getGitHubUrl(File repoDir) {
-        try {
-            Git git = Git.open(repoDir);
-            String url = git.getRepository().getConfig().getString("remote", "origin", "url");
-            git.close();
-            return url;
-        } catch (Exception e) {
-            logger.warn("Failed to get GitHub URL from git config: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    private static File getOrCreateGitRepo(String githubUrl, String token) throws IOException, GitAPIException {
-        File cacheDir = new File(DEFAULT_CACHE_DIR);
-        // Remove protocol and domain, keeping the org/repo path
-        String repoPath = githubUrl.replaceAll("^https?://[^/]+/|git@[^:]+:", "").replaceAll("\\.git$", "");
-        // Split into org and repo name
-        String[] parts = repoPath.split("/");
-        if (parts.length != 2) {
-            throw new IllegalArgumentException("Invalid GitHub URL format. Expected format: domain/org/repo");
-        }
-        String orgName = parts[0];
-        String repoName = parts[1];
-        
-        // Create org directory under cache dir
-        File orgDir = new File(cacheDir, orgName);
-        File repoDir = new File(orgDir, repoName);
-
-        if (!repoDir.exists()) {
-            logger.info("Cloning repository {} to {}", githubUrl, repoDir);
-            orgDir.mkdirs();
-            Git.cloneRepository()
-                    .setURI(githubUrl)
-                    .setDirectory(repoDir)
-                    .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
-                    .setTagOption(TagOpt.FETCH_TAGS)
-                    .call()
-                    .close();
-        } else {
-            logger.info("Using existing repository at {}", repoDir);
-            Git git = Git.open(repoDir);
-            try {
-                logger.info("Fetching latest changes...");
-                git.fetch()
-                        .setRefSpecs("+refs/tags/*:refs/tags/*")
-                        .setTagOpt(TagOpt.FETCH_TAGS)
-                        .setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
-                        .call();
-            } catch (GitAPIException e) {
-                logger.warn("Failed to fetch latest changes: {}", e.getMessage());
-            }
-            git.close();
-        }
-
-        return repoDir;
-    }
-
     private static void printAnalysisResults(ReleaseAnalysis analysis) {
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z");
-
         // Print individual PR details
         for (PullRequest pr : analysis.getPullRequests()) {
             outputPullRequestDetails(pr);
@@ -255,12 +121,13 @@ public class CLI {
 
         System.out.println("\nSummary:");
         System.out.println("==========");
-        System.out.println("- Release " + analysis.getReleaseTag() + " was made on " + dateFormat.format(analysis.getReleaseDate()));
-        System.out.println("- From Release " + analysis.getFromReleaseTag() + " was made on " + dateFormat.format(analysis.getFromReleaseDate()));
-        System.out.println("- Included " + analysis.getPullRequests().size() + " pull requests");
+        System.out.printf("Release %s to %s%n", analysis.getFromReleaseTag(), analysis.getReleaseTag());
+        System.out.printf("Time Period: %s to %s%n", 
+            analysis.getFromReleaseDate(), analysis.getReleaseDate());
+        System.out.printf("Total Pull Requests: %d%n", analysis.getTotalPullRequests());
 
         // Lead Time Metrics
-        System.out.println("- Lead Time Metrics:");
+        System.out.println("\nLead Time Metrics:");
         System.out.printf("  * Average: %.1f hours (%.1f days)%n", 
             analysis.getAverageLeadTimeHours(), 
             analysis.getAverageLeadTimeHours() / 24.0);
@@ -286,9 +153,9 @@ public class CLI {
             else if (leadTime < 72) mediumCount++;
             else slowCount++;
         }
-        int total = analysis.getPullRequests().size();
+        int total = analysis.getTotalPullRequests();
         
-        System.out.println("\n- Lead Time Distribution:");
+        System.out.println("\nLead Time Distribution:");
         System.out.printf("  * Fast (< 24 hours): %d PRs (%.1f%%)%n", 
             fastCount, (fastCount * 100.0) / total);
         System.out.printf("  * Medium (24-72 hours): %d PRs (%.1f%%)%n", 
