@@ -115,8 +115,9 @@ public class CLI {
 
     private static void printAnalysisResults(ReleaseAnalysis analysis) {
         // Print individual PR details
+        System.out.println("Individual PR Details:\n");
         for (PullRequest pr : analysis.getPullRequests()) {
-            outputPullRequestDetails(pr);
+            System.out.println(pr);
         }
 
         System.out.println("\nSummary:");
@@ -162,9 +163,5 @@ public class CLI {
             mediumCount, (mediumCount * 100.0) / total);
         System.out.printf("  * Slow (> 72 hours): %d PRs (%.1f%%)%n", 
             slowCount, (slowCount * 100.0) / total);
-    }
-
-    private static void outputPullRequestDetails(PullRequest pr) {
-        System.out.print(pr.toString());
     }
 }
