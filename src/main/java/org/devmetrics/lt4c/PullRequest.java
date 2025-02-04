@@ -13,10 +13,11 @@ public class PullRequest {
     private final int additions;
     private final int deletions;
     private Date releaseDate;  // When this PR was included in a release
+    private final String body; // Description of the PR
 
     public PullRequest(int number, String title, String author, String destinationBranch,
                       String mergeCommit, Date createdAt, Date mergedAt, 
-                      int additions, int deletions) {
+                      int additions, int deletions, String body) {
         this.number = number;
         this.title = title;
         this.author = author;
@@ -26,6 +27,7 @@ public class PullRequest {
         this.mergedAt = mergedAt;
         this.additions = additions;
         this.deletions = deletions;
+        this.body = body;
     }
 
     public int getNumber() {
@@ -99,7 +101,20 @@ public class PullRequest {
 
     @Override
     public String toString() {
-        return String.format("PR #%d: %s by %s to %s (merged at %s, lead time: %.1f hours)", 
-            number, title, author, destinationBranch, mergedAt, getLeadTimeHours());
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("PR #%d: %s%n", number, title));
+        sb.append(String.format("  Author: %s%n", author));
+        sb.append(String.format("  Target Branch: %s%n", destinationBranch));
+        sb.append(String.format("  Created: %s%n", createdAt));
+        sb.append(String.format("  Merged: %s%n", mergedAt));
+        
+        if (body != null && !body.isEmpty()) {
+            String firstLine = body.split("\\r?\\n")[0].trim();
+            sb.append(String.format("  Description: %s%n", firstLine));
+        }
+        
+        sb.append(String.format("  Changes: +%d -%d lines (total: %d)%n", additions, deletions, getTotalChanges()));
+        sb.append(String.format("  Lead Time: %.1f hours", getLeadTimeHours()));
+        return sb.toString();
     }
 }

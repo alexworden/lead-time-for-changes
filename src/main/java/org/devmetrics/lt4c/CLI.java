@@ -165,12 +165,6 @@ public class CLI {
     }
 
     private static void outputPullRequestDetails(PullRequest pr) {
-        System.out.printf("PR #%d: %s%n", pr.getNumber(), pr.getTitle());
-        System.out.printf("  Author: %s%n", pr.getAuthor());
-        System.out.printf("  Target Branch: %s%n", pr.getDestinationBranch());
-        System.out.printf("  Created: %s%n", pr.getCreatedAt());
-        System.out.printf("  Merged: %s%n", pr.getMergedAt());
-        System.out.printf("  Changes: +%d -%d lines%n", pr.getAdditions(), pr.getDeletions());
-        System.out.printf("  Total Changes: %d lines%n", pr.getTotalChanges());
+        System.out.print(pr.toString());
     }
 }

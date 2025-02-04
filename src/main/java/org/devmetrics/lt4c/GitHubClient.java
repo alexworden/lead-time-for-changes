@@ -125,7 +125,8 @@ public class GitHubClient {
                     processedPRs.add(String.valueOf(pr.getNumber()));
                     pullRequests.add(createPullRequest(pr));
                     prCount++;
-                    logger.debug("Found PR #{} associated with commit {}", pr.getNumber(), commitSha);
+                    logger.debug("Found PR #{} associated with commit {} ({})", 
+                        pr.getNumber(), commitSha.substring(0, 8), pr.getTitle());
                 }
             } catch (GHFileNotFoundException e) {
                 // Commit might not exist or be accessible
@@ -226,7 +227,8 @@ public class GitHubClient {
             ghPr.getCreatedAt(),
             ghPr.getMergedAt(),
             ghPr.getAdditions(),
-            ghPr.getDeletions()
+            ghPr.getDeletions(),
+            ghPr.getBody()
         );
     }
 
