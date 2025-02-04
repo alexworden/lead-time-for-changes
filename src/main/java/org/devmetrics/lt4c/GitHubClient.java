@@ -107,11 +107,13 @@ public class GitHubClient {
         logger.info("Finding PRs for {} commits", commits.size());
         long startTime = System.currentTimeMillis();
         int prCount = 0;
+        int skippedCommits = 0;
         
         for (String commitSha : commits) {
             logger.debug("Checking for PRs associated with commit {}", commitSha);
             try {
-                List<GHPullRequest> prs = repository.getCommit(commitSha).listPullRequests().toList();
+                GHCommit commit = repository.getCommit(commitSha);
+                List<GHPullRequest> prs = commit.listPullRequests().toList();
                 if (prs == null || prs.isEmpty()) {
                     logger.debug("No PRs found for commit {}", commitSha);
                     continue;
@@ -130,12 +132,18 @@ public class GitHubClient {
                 }
             } catch (GHFileNotFoundException e) {
                 // Commit might not exist or be accessible
-                logger.warn("Could not find commit {} or its associated PRs: {}", commitSha, e.getMessage());
+                logger.warn("Could not find commit {} - commit may have been deleted: {}", commitSha, e.getMessage());
+                skippedCommits++;
+            } catch (IOException e) {
+                // Other API errors
+                logger.warn("Error processing commit {} - skipping: {}", commitSha, e.getMessage());
+                skippedCommits++;
             }
         }
         
         long endTime = System.currentTimeMillis();
-        logger.info("Found {} PRs in {}", prCount, formatDuration(endTime - startTime));
+        logger.info("Found {} PRs in {} ({} commits skipped)", 
+            prCount, formatDuration(endTime - startTime), skippedCommits);
     }
     
     /**
@@ -167,40 +175,60 @@ public class GitHubClient {
             commitsToProcess.add(commit.getSHA1());
             
             // Get parents
-            List<GHCommit> parents = commit.getParents();
+            List<GHCommit> parents;
+            try {
+                parents = commit.getParents();
+            } catch (GHFileNotFoundException e) {
+                logger.warn("{} Could not fetch parents for commit {} - commit may have been deleted: {}", 
+                    getDepthPrefix(currentDepth), commit.getSHA1(), e.getMessage());
+                return;
+            }
+            
             if (parents.isEmpty()) {
                 return;
             }
 
             // For merge commits, recursively process the source branch (second parent)
             if (parents.size() > 1) {
-                GHCommit sourceBranchCommit = parents.get(1);
-
-                if (logger.isDebugEnabled()) {
-                    // Try to get branch name from associated PR
-                    List<GHPullRequest> prs = sourceBranchCommit.listPullRequests().toList();
-                    String branchInfo = prs.isEmpty() ? "unknown branch" : 
-                        String.format("branch '%s' (PR #%d)", prs.get(0).getHead().getRef(), prs.get(0).getNumber());
-                    logger.debug("{} Processing commit {} from {} (depth: {})", 
-                        getDepthPrefix(currentDepth), sourceBranchCommit.getSHA1().substring(0, 8), 
-                        branchInfo, currentDepth);
-                }
-                if (!processedCommits.contains(sourceBranchCommit.getSHA1())) {
-                    processCommitAndParents(sourceBranchCommit, stopAtTag, 
-                        processedCommits, commitsToProcess, currentDepth + 1, maxDepth);
+                GHCommit sourceBranchCommit;
+                try {
+                    sourceBranchCommit = parents.get(1);
+                    
+                    if (logger.isDebugEnabled()) {
+                        // Try to get branch name from associated PR
+                        List<GHPullRequest> prs = sourceBranchCommit.listPullRequests().toList();
+                        String branchInfo = prs.isEmpty() ? "unknown branch" : 
+                            String.format("branch '%s' (PR #%d)", prs.get(0).getHead().getRef(), prs.get(0).getNumber());
+                        logger.debug("{} Processing commit {} from {} (depth: {})", 
+                            getDepthPrefix(currentDepth), sourceBranchCommit.getSHA1().substring(0, 8), 
+                            branchInfo, currentDepth);
+                    }
+                    
+                    if (!processedCommits.contains(sourceBranchCommit.getSHA1())) {
+                        processCommitAndParents(sourceBranchCommit, stopAtTag, 
+                            processedCommits, commitsToProcess, currentDepth + 1, maxDepth);
+                    }
+                } catch (GHFileNotFoundException e) {
+                    logger.warn("{} Could not fetch source branch commit {} - commit may have been deleted: {}", 
+                        getDepthPrefix(currentDepth), parents.get(1).getSHA1(), e.getMessage());
                 }
             }
             
             // Continue with the first parent (main branch line)
-            GHCommit parentCommit = parents.get(0);
-            if (!processedCommits.contains(parentCommit.getSHA1())) {
-                processCommitAndParents(parentCommit, stopAtTag, 
-                    processedCommits, commitsToProcess, currentDepth + 1, maxDepth);
+            try {
+                GHCommit parentCommit = parents.get(0);
+                if (!processedCommits.contains(parentCommit.getSHA1())) {
+                    processCommitAndParents(parentCommit, stopAtTag, 
+                        processedCommits, commitsToProcess, currentDepth + 1, maxDepth);
+                }
+            } catch (GHFileNotFoundException e) {
+                logger.warn("{} Could not fetch parent commit {} - commit may have been deleted: {}", 
+                    getDepthPrefix(currentDepth), parents.get(0).getSHA1(), e.getMessage());
             }
         } catch (GHFileNotFoundException e) {
             // Stop processing if we can't find the commit (likely hit the repository boundary)
-            logger.debug("{} Reached repository boundary at commit {}", 
-                getDepthPrefix(currentDepth), commit.getSHA1());
+            logger.warn("{} Could not fetch commit {} - commit may have been deleted: {}", 
+                getDepthPrefix(currentDepth), commit.getSHA1(), e.getMessage());
         }
     }
 

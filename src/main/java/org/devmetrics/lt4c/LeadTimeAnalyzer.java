@@ -2,6 +2,7 @@ package org.devmetrics.lt4c;
 
 import org.kohsuke.github.GHRef;
 import org.kohsuke.github.GHCommit;
+import org.kohsuke.github.GHFileNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
@@ -19,11 +20,36 @@ public class LeadTimeAnalyzer {
         logger.info("Analyzing release from {} to {}", previousReleaseRef, releaseRef);
         
         // Get tag dates from GitHub
-        GHRef releaseTag = githubClient.getRepository().getRef("tags/" + releaseRef.replaceFirst("^refs/tags/", ""));
-        GHRef previousReleaseTag = githubClient.getRepository().getRef("tags/" + previousReleaseRef.replaceFirst("^refs/tags/", ""));
+        GHRef releaseTag;
+        GHRef previousReleaseTag;
+        try {
+            releaseTag = githubClient.getRepository().getRef("tags/" + releaseRef.replaceFirst("^refs/tags/", ""));
+            previousReleaseTag = githubClient.getRepository().getRef("tags/" + previousReleaseRef.replaceFirst("^refs/tags/", ""));
+        } catch (GHFileNotFoundException e) {
+            throw new IOException("Could not find one or both tags. Please ensure both tags exist: " + e.getMessage(), e);
+        }
         
-        GHCommit releaseCommit = githubClient.getRepository().getCommit(releaseTag.getObject().getSha());
-        GHCommit previousReleaseCommit = githubClient.getRepository().getCommit(previousReleaseTag.getObject().getSha());
+        // For annotated tags, we need to get the tag object first, which points to the commit
+        // For lightweight tags, the object directly points to the commit
+        GHCommit releaseCommit;
+        GHCommit previousReleaseCommit;
+        try {
+            String releaseSha = releaseTag.getObject().getSha();
+            String previousReleaseSha = previousReleaseTag.getObject().getSha();
+            
+            // If this is an annotated tag, get the commit it points to
+            if (releaseTag.getObject().getType().equals("tag")) {
+                releaseSha = githubClient.getRepository().getTagObject(releaseSha).getObject().getSha();
+            }
+            if (previousReleaseTag.getObject().getType().equals("tag")) {
+                previousReleaseSha = githubClient.getRepository().getTagObject(previousReleaseSha).getObject().getSha();
+            }
+            
+            releaseCommit = githubClient.getRepository().getCommit(releaseSha);
+            previousReleaseCommit = githubClient.getRepository().getCommit(previousReleaseSha);
+        } catch (GHFileNotFoundException e) {
+            throw new IOException("Could not find commit for one or both tags. The commits may have been deleted or force-pushed: " + e.getMessage(), e);
+        }
         
         Date releaseDate = releaseCommit.getCommitDate();
         Date fromReleaseDate = previousReleaseCommit.getCommitDate();
@@ -55,7 +81,7 @@ public class LeadTimeAnalyzer {
 
         return new ReleaseAnalysis(
             releaseRef,
-            releaseTag.getObject().getSha(),
+            releaseCommit.getSHA1(),
             releaseDate,
             previousReleaseRef,
             fromReleaseDate,
